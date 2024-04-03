@@ -111,7 +111,9 @@ function initIO() {
 
 
 	io.on("connection", (socket) => {
-		socket.on("join_room", async (roomId) => {
+
+
+		socket.on("join_room", async (roomId, callback) => {
 			socket.join(roomId);
 			socket.session.roomIds.push(roomId);
 			console.log(`user with id-${socket.id} joined room - ${roomId}`);
@@ -120,7 +122,9 @@ function initIO() {
 
 			const roomRef = admin.firestore().collection('rooms').doc(roomId);
 			const roomSnap = await roomRef.get();
-			if(roomSnap == null || !roomSnap.exists) return; //TODO: Return error
+			if(roomSnap == null || !roomSnap.exists) {
+				return callback({ error: 'Room not found' });
+			}
 
 			const roomData = roomSnap.data();
 			const isGroup = roomData.is_group;
@@ -130,6 +134,19 @@ function initIO() {
 			
 			roomList.set(roomId, new Room(roomId, io, roomRef, isGroup, members, roomName, photoUrl));
 		});
+
+
+		socket.on('load_chat_doc_from_db', async (data, callback) => {
+			const roomId = data.roomId;
+
+			if(!roomList.has(roomId)) {
+				return callback({ error: "Room not found" });
+			}
+
+			const room = roomList.get(roomId);
+			const response = await room.loadChatFromDb(data.curChatDocId);
+			callback(response)
+		})
 	
 		socket.on("chat_event_client_to_server", (data) => {			
 			if(!roomList.has(data.roomId)) return;
@@ -156,11 +173,18 @@ function initIO() {
 			})
 		});
 
-		socket.on('send_friend_request_client_to_server', async ({ senderUid, receiverUid }) => {
-			const receiver = sessionStore.get(receiverUid);
-			if(receiver) {
-				const senderData = await dbHelper.getUserData(senderUid);
-				io.to(receiver.currentSocketId).emit('send_friend_request_server_to_client', senderData)
+		socket.on('send_friend_request_client_to_server', async ({ senderUid, receiverUid }, callback) => {
+			try {
+				const receiver = sessionStore.get(receiverUid);
+				if(receiver) {
+					const senderData = await dbHelper.getUserData(senderUid);
+					io.to(receiver.currentSocketId).emit('send_friend_request_server_to_client', senderData);
+					const response = await dbHelper.sendFriendRequest(senderUid, receiverUid);
+
+					callback(response);
+				}
+			} catch (error) {
+				callback({ error });
 			}
 
 			

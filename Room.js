@@ -33,6 +33,18 @@ module.exports = class Room {
 		}
 	}
 
+	async loadChatFromDb(curChatDocId) {
+		let reqIdx = this.chatDocIds.length - 1;
+		if(curChatDocId) {
+			reqIdx = this.chatDocIds.findIndex(id => id == curChatDocId) - 1;
+		}
+
+		if(reqIdx < 0) return { error: 'No document found' };
+
+		const reqChatDocSnap = await this.roomRef.collection('chat_history').doc(this.chatDocIds[reqIdx]).get();
+		return { success: 'Successfully fetch chat doc', chat_history: reqChatDocSnap.data().chat_history };
+	}
+
 	async newChatEvent(chatEvent) {
 		chatEvent.chatDocId = this.currentChatDocRef?.id;
 		chatEvent.time = new Date();

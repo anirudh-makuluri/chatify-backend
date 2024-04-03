@@ -22,7 +22,8 @@ module.exports = {
 						created_at: new Date(),
 						friend_list: [],
 						sent_friend_requests: [],
-						received_friend_requests: []
+						received_friend_requests: [],
+						joined_rooms: []
 					})
 
 					return { success: `User with uid: ${user.uid} and email: ${user.email} created successfully` }
@@ -40,28 +41,31 @@ module.exports = {
 		const userData = snapshot.data();
 
 		const recFrndReqUids = userData.received_friend_requests || [];
-		const recFrndpromises = recFrndReqUids.map(data => this.getUserData(data.uid));
+		const recFrndpromises = recFrndReqUids.map(uid => this.getUserData(uid));
 		const recFrndReqData = await Promise.all(recFrndpromises);
 
 		const sentFrndReqsUids = userData.sent_friend_requests || [];
-		const sentFrndPromises = sentFrndReqsUids.map(data => this.getUserData(data.uid));
+		const sentFrndPromises = sentFrndReqsUids.map(uid => this.getUserData(uid));
 		const sentFrndReqData = await Promise.all(sentFrndPromises);
 		
 		const frndListUids = userData.friend_list || [];
-		const frndListPromises = frndListUids.map(data => this.getUserData(data.uid));
+		const frndListPromises = frndListUids.map(uid => this.getUserData(uid));
 		const frndListData = await Promise.all(frndListPromises);
 
-		const roomsSnap = await config.firebase.db.collection('rooms').where('members', 'array-contains', uid).get();
-
-		const rooms = await roomsSnap.docs.reduce(async (accumulatorPromise, doc) => {
+		const joinedRoomIds = userData.joined_rooms || [];
+		const rooms = await joinedRoomIds.reduce(async (accumulatorPromise, roomId) => {
 			const accumulator = await accumulatorPromise;
 
-			const roomData = doc.data();
+			const roomSnap = await config.firebase.db.collection('rooms').doc(roomId).get();
+			
+			if(!roomSnap.exists) return accumulator;
+
+			const roomData = roomSnap.data();
 			let messages = [];
 			const chatDocIds = roomData.chat_doc_ids || [];
 			if(chatDocIds.length > 0) {
 				const latestChatDocId = chatDocIds[chatDocIds.length - 1];
-				const chatHistorySnap = await config.firebase.db.collection('rooms').doc(doc.id).collection('chat_history').doc(latestChatDocId).get();
+				const chatHistorySnap = await config.firebase.db.collection('rooms').doc(roomId).collection('chat_history').doc(latestChatDocId).get();
 				if(chatHistorySnap.exists) {
 					messages = chatHistorySnap.data().chat_history;
 				}
@@ -73,7 +77,7 @@ module.exports = {
 				const reqData = frndListData.find(frnd => frnd.uid == otherUserUid);
 
 				accumulator.push({
-					id: doc.id, 
+					id: roomId, 
 					...roomData, 
 					messages: messages,
 					photo_url: reqData?.photo_url,
@@ -81,7 +85,7 @@ module.exports = {
 				})
 			} else {
 				accumulator.push({
-					id: doc.id,
+					id: roomId,
 					...roomData,
 					messages: messages
 				})
@@ -174,15 +178,13 @@ module.exports = {
 		const receivedFriendRequests = senderData.received_friend_requests || [];
 		const friendList = senderData.friend_list || [];
 
-		if (sentFriendRequests.find(user => user.uid == receiverUid) || receivedFriendRequests.find(user => user.uid == receiverUid) || friendList.find(user => user.uid == receiverUid)) {
+		if (sentFriendRequests.find(uid => uid == receiverUid) || receivedFriendRequests.find(uid => uid == receiverUid) || friendList.find(uid => uid == receiverUid)) {
 			throw "Friend request already sent or the user is already your friend"
 		}
 
 		try {
 
-			sentFriendRequests.push({
-				uid: receiverUid
-			})
+			sentFriendRequests.push(receiverUid)
 
 			const senderRef = senderSnapshot.ref
 
@@ -192,16 +194,14 @@ module.exports = {
 
 			const receivedFriendRequests = receiverData.received_friend_requests || [];
 
-			receivedFriendRequests.push({
-				uid: senderUid
-			})
+			receivedFriendRequests.push(senderUid)
 
 			const receiverRef = receiverSnapshot.ref
 			await receiverRef.update({
 				received_friend_requests: receivedFriendRequests
 			})
 
-			return `Successfully sent friend request from ${senderData.name} to ${receiverData.name}`
+			return { success: `Successfully sent friend request from ${senderData.name} to ${receiverData.name}` }
 		} catch (error) {
 			throw error
 		}
@@ -220,8 +220,10 @@ module.exports = {
 		const sentFriendRequests = reqUserData.sent_friend_requests || [];
 
 		try {
-			const userIndex = receivedFriendRequests.findIndex(obj => obj.uid == requestedUid);
-			const reqIndex = sentFriendRequests.findIndex(obj => obj.uid == uid);
+
+			//Removing the uid from users received list and sent list
+			const userIndex = receivedFriendRequests.findIndex(obj => obj == requestedUid);
+			const reqIndex = sentFriendRequests.findIndex(obj => obj == uid);
 
 			if(userIndex == -1 || reqIndex == -1) throw "Friend request not found";
 
@@ -239,28 +241,32 @@ module.exports = {
 			})
 
 			if(!isAccepted) return { success: `Successfully declined request of ${reqUserData.name} from ${userData.name}` };
+
+			const roomId = genRoomId(requestedUid, uid);
 			
 			const userFriendList = userData.friend_list || [];
+			const userJoinedRooms = userData.joined_rooms || [];
 
-			userFriendList.push({
-				uid: requestedUid
-			})
+			userFriendList.push(requestedUid)
+			userJoinedRooms.push(roomId)
 
 			await userRef.update({
-				friend_list: userFriendList
+				friend_list: userFriendList,
+				joined_rooms: userJoinedRooms
 			})
 
 			const reqUserFriendList = reqUserData.friend_list || [];
+			const reqUserJoinedRooms = reqUserData.joined_rooms || [];
 
-			reqUserFriendList.push({
-				uid: uid
-			})
+			reqUserFriendList.push(uid)
+			reqUserJoinedRooms.push(roomId);
 
 			await reqUserRef.update({
-				friend_list: reqUserFriendList
+				friend_list: reqUserFriendList,
+				joined_rooms: reqUserJoinedRooms
 			})
 
-			const roomId = genRoomId(requestedUid, uid);
+			
 			const roomSnap = await config.firebase.db.collection('rooms').doc(roomId).get();
 			if(roomSnap.exists) {
 				return { success: `RoomId: ${roomId} already created` };
@@ -279,13 +285,4 @@ module.exports = {
 		}
 
 	},
-
-	addChatMessageToDb: async function (chatEvent) {
-		const roomId = chatEvent.roomId;
-		const roomSnapshot = await config.firebase.db.collection('rooms').doc(roomId).get();
-
-		if(roomSnapshot.exists) {
-
-		}
-	}
 }
