@@ -79,16 +79,16 @@ function initIO() {
 		const sessionCookie = parseCookieString(socket.handshake.headers.cookie).session || '';
 
 		const decodedClaims = await admin.auth().verifySessionCookie(sessionCookie, false)
-		.then(decodedClaims => decodedClaims).catch((err) => {
-			console.error(err);
-			return null;
-		})
+			.then(decodedClaims => decodedClaims).catch((err) => {
+				console.error(err);
+				return null;
+			})
 
 
 		console.log("socket.handshake.auth: ", socket.handshake.auth);
 		console.log("-----------------------------------------------");
 
-		if(decodedClaims) {
+		if (decodedClaims) {
 			socket.uid = decodedClaims.uid;
 			socket.email = decodedClaims.email;
 		} else {
@@ -97,7 +97,7 @@ function initIO() {
 		}
 
 		const name = socket.handshake.auth.name;
-		if(!name) {
+		if (!name) {
 			console.log("Invalid name");
 			return next(new Error("invalid userName"));
 		}
@@ -117,12 +117,12 @@ function initIO() {
 			socket.join(roomId);
 			socket.session.roomIds.push(roomId);
 			console.log(`user with id-${socket.id} joined room - ${roomId}`);
-		
-			if(roomList.has(roomId)) return;
+
+			if (roomList.has(roomId)) return;
 
 			const roomRef = admin.firestore().collection('rooms').doc(roomId);
 			const roomSnap = await roomRef.get();
-			if(roomSnap == null || !roomSnap.exists) {
+			if (roomSnap == null || !roomSnap.exists) {
 				return callback({ error: 'Room not found' });
 			}
 
@@ -131,7 +131,7 @@ function initIO() {
 			const members = roomData.members;
 			const roomName = roomData.name || '';
 			const photoUrl = roomData.photo_url || '';
-			
+
 			roomList.set(roomId, new Room(roomId, io, roomRef, isGroup, members, roomName, photoUrl));
 		});
 
@@ -139,7 +139,7 @@ function initIO() {
 		socket.on('load_chat_doc_from_db', async (data, callback) => {
 			const roomId = data.roomId;
 
-			if(!roomList.has(roomId)) {
+			if (!roomList.has(roomId)) {
 				return callback({ error: "Room not found" });
 			}
 
@@ -147,15 +147,15 @@ function initIO() {
 			const response = await room.loadChatFromDb(data.curChatDocId);
 			callback(response)
 		})
-	
-		socket.on("chat_event_client_to_server", (data) => {			
-			if(!roomList.has(data.roomId)) return;
+
+		socket.on("chat_event_client_to_server", (data) => {
+			if (!roomList.has(data.roomId)) return;
 
 			const room = roomList.get(data.roomId);
 			room.newChatEvent(data);
 		});
-	
-	
+
+
 		socket.on('disconnect', () => {
 			console.log("A client disconnected :", socket.uid);
 			const sessionId = socket.uid;
@@ -165,8 +165,8 @@ function initIO() {
 			const roomIds = socket.session.roomIds || [];
 			roomIds.forEach((roomId) => {
 				const usersInRoom = io.sockets.adapter.rooms.get(roomId);
-        		const numUsersInRoom = usersInRoom ? usersInRoom.size : 0;
-				if(numUsersInRoom == 0) {
+				const numUsersInRoom = usersInRoom ? usersInRoom.size : 0;
+				if (numUsersInRoom == 0) {
 					roomList.delete(roomId);
 					console.log(`Deleted ${roomId} from roomList`);
 				}
@@ -176,18 +176,33 @@ function initIO() {
 		socket.on('send_friend_request_client_to_server', async ({ senderUid, receiverUid }, callback) => {
 			try {
 				const receiver = sessionStore.get(receiverUid);
-				if(receiver) {
+				const response = await dbHelper.sendFriendRequest(senderUid, receiverUid);
+				if (receiver) {
 					const senderData = await dbHelper.getUserData(senderUid);
-					io.to(receiver.currentSocketId).emit('send_friend_request_server_to_client', senderData);
-					const response = await dbHelper.sendFriendRequest(senderUid, receiverUid);
-
-					callback(response);
+					io.to(receiver.currentSocketId).emit('send_friend_request_server_to_client', senderData);					
 				}
+
+				callback(response);
 			} catch (error) {
 				callback({ error });
 			}
+		});
 
-			
-		})
+		socket.on('respond_friend_request_client_to_server', async ({ uid, requestUid, isAccepted }, callback) => {
+			try {
+				const response = await dbHelper.respondFriendRequest(uid, requestUid, isAccepted);
+
+				const requestedUser = sessionStore.get(requestUid);
+				if(requestedUser && isAccepted) {
+					const respondedUserData = await dbHelper.getUserData(uid);
+					io.to(requestedUser.currentSocketId).emit('respond_friend_request_server_to_client', respondedUserData);
+				}
+
+				callback(response);
+			} catch (error) {
+				callback({ error })
+			}
+		});
+
 	});
 }
