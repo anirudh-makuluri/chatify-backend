@@ -31,6 +31,10 @@ router.post('/session', (req, res) => {
 		config.firebase.admin.auth().createSessionCookie(idToken, { expiresIn })
 			.then(sessionCookie => {
 				const options = { maxAge: expiresIn, httpOnly: true, secure: false, sameSite: 'lax' }
+				if(config.PORT == 5000) {
+					options.secure = true;
+					options.sameSite = 'none'
+				}
 				res.cookie('session', sessionCookie, options);
 				res.end(JSON.stringify({ status: 'success' }))
 			},
