@@ -13,6 +13,10 @@ const corsOptions = {
 
 router.options('/session/', cors(corsOptions))
 
+router.get('/', (req, res) => {
+	res.send("Hello :)")
+})
+
 router.post('/session', (req, res) => {
 	const idToken = req.body.idToken.toString();
 
