@@ -7,7 +7,7 @@ const dbHelper = require('../helpers/db-helper');
 const router = new Router();
 
 const corsOptions = {
-	origin: 'http://localhost:3000',
+	origin: config.allowedOrigins,
 	credentials: true
 };
 

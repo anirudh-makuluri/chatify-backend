@@ -16,7 +16,7 @@ const app = express();
 const httpServer = createServer(app);
 const io = new Server(httpServer, {
 	cors: {
-		origin: "http://localhost:3000",
+		origin: config.allowedOrigins,
 		methods: ['GET', 'POST'],
 		credentials: true
 	}
@@ -27,7 +27,10 @@ httpServer.listen(config.PORT, () => {
 })
 
 app.use((req, res, next) => {
-	res.setHeader('Access-Control-Allow-Origin', 'http://localhost:3000');
+	const origin = req.headers.origin;
+    if (config.allowedOrigins.includes(origin)) {
+        res.setHeader('Access-Control-Allow-Origin', origin);
+    }
 	res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS, PUT, PATCH, DELETE');
 	res.setHeader('Access-Control-Allow-Headers', "Origin, X-Requested-With, Content-Type, Accept");
 	res.setHeader('Access-Control-Allow-Credentials', true);
