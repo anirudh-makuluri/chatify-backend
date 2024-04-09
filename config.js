@@ -18,6 +18,6 @@ module.exports = {
 		universe_domain: process.env.UNIVERSE_DOMAIN
 	},
 	chatDocSize: 50,
-	allowedOrigins: ['http://localhost:3000', 'chatify-a.vercel.app']
+	allowedOrigins: ['http://localhost:3000', 'chatify-a.vercel.app', 'http://localhost:8192', 'http://localhost:8081', 'exp://192.168.0.102:8081', 'http://192.168.0.102:8081']
 }
 

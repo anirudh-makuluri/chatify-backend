@@ -18,7 +18,7 @@ module.exports = {
 						uid: user.uid,
 						name: user.name,
 						email: user.email,
-						photo_url: `https://ui-avatars.com/api/?name=${user.name}&length=1`,
+						photo_url: `https://ui-avatars.com/api/?name=${user.name.replaceAll(" ", "")}&length=1`,
 						created_at: new Date(),
 						friend_list: [],
 						sent_friend_requests: [],

@@ -14,6 +14,7 @@ const corsOptions = {
 router.options('/session/', cors(corsOptions))
 
 router.get('/', (req, res) => {
+	console.log("Pinged :)");
 	res.send("Hello :)")
 })
 
