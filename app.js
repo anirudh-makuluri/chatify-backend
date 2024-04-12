@@ -4,6 +4,7 @@ const { Server } = require("socket.io");
 const cookieParser = require('cookie-parser');
 const admin = require('firebase-admin');
 const cors = require('cors');
+const fileUpload = require('express-fileupload');
 
 const config = require('./config');
 
@@ -47,6 +48,7 @@ app.use(cors(corsOptions));
 app.use(express.json({ verify: (req, res, buf) => { req.rawBody = buf } }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
+app.use(fileUpload());
 app.use(sessionRouter);
 app.use(usersRouter);
 
