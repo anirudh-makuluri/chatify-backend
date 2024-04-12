@@ -285,4 +285,21 @@ module.exports = {
 		}
 
 	},
+
+	updateUserData: async function (uid, newData) {
+		try {
+			if(!uid) throw "uid not found"
+
+			const userRef = config.firebase.db.collection('auth_users').doc(uid);
+			const userSnap = await userRef.get();
+			if(!userSnap.exists) {
+				throw "User doesnt exist"
+			} 
+
+			await userRef.update(newData);
+			return { success: `User: ${uid} updated successfully with data ${JSON.stringify(newData)}` }
+		} catch (error) {
+			throw error
+		}
+	}
 }

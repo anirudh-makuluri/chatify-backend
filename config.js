@@ -3,7 +3,9 @@ require('dotenv').config()
 module.exports = {
 	PORT: process.env.PORT,
 	expiresIn: 60 * 60 * 24 * 60 * 1000, //60 days
-	firebase: {},
+	firebase: {
+		storageBucketName: `${process.env.PROJECT_ID}.appspot.com`
+	},
 	serviceAccount: {
 		type: process.env.TYPE,
 		project_id: process.env.PROJECT_ID,
@@ -18,6 +20,11 @@ module.exports = {
 		universe_domain: process.env.UNIVERSE_DOMAIN
 	},
 	chatDocSize: 50,
-	allowedOrigins: ['http://localhost:3000', 'chatify-a.vercel.app', 'http://localhost:8192', 'http://localhost:8081', 'exp://192.168.0.102:8081', 'http://192.168.0.102:8081']
+	allowedOrigins: ['http://localhost:3000', 'chatify-a.vercel.app', 'http://localhost:8192', 'http://localhost:8081', 'exp://192.168.0.102:8081', 'http://192.168.0.102:8081'],
+	storageBucketCorsConfiguration: {
+		"origin": this.allowedOrigins,
+		"method": ["GET"],
+		"maxAgeSeconds": 3600
+	}
 }
 

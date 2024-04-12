@@ -52,11 +52,21 @@ app.use(usersRouter);
 
 
 admin.initializeApp({
-	credential: admin.credential.cert(config.serviceAccount)
+	credential: admin.credential.cert(config.serviceAccount),
+	storageBucket: config.firebase.storageBucketName
 })
 
 config.firebase.admin = admin;
 config.firebase.db = admin.firestore()
+const bucket = admin.storage().bucket();
+config.firebase.storageBucket = bucket;
+
+configureStorageBucketCors();
+async function configureStorageBucketCors() {
+	await config.firebase.storageBucket.setCorsConfiguration([config.storageBucketCorsConfiguration])
+	.then(() => console.log(`Bucket ${config.firebase.storageBucketName} is updated with the CORS config`))
+	.catch(e => console.log(e));
+}
 
 const sessionStore = new Map();
 const roomList = new Map();
@@ -206,6 +216,23 @@ function initIO() {
 				callback({ error })
 			}
 		});
+
+		socket.on('update_user_data', async ({ uid, newData }, callback) => {
+			try {
+				const response = await dbHelper.updateUserData(uid, newData);
+
+				if(newData.name != null && sessionStore.has(uid)) {
+					const user = sessionStore.get(uid);
+					user.name = newData.name;
+				}
+
+				callback(response);
+			} catch (error) {
+				callback({ error });
+			}
+		});
+
+
 
 	});
 }
