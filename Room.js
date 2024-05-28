@@ -96,7 +96,7 @@ module.exports = class Room {
 	}
 
 
-	async updateReaction({ reactionId, id, chatDocId, userUid, userName }) {
+	async updateChatReaction({ reactionId, id, chatDocId, userUid, userName }) {
 		const chatDocRef = this.roomRef.collection('chat_history').doc(chatDocId);
 		const chatDocSnap = await chatDocRef.get();
 		const chatHistory = chatDocSnap.data().chat_history;
@@ -144,5 +144,47 @@ module.exports = class Room {
 		this.io.to(this.roomId).emit('chat_reaction_server_to_client', { reactionId, id, chatDocId, userUid, userName, roomId: this.roomId })
 
 		return { success: `Successfully sent chat reaction to roomId: ${this.roomId}` };
+	}
+
+	async deleteChatMessage({ id, chatDocId }){
+		const chatDocRef = this.roomRef.collection('chat_history').doc(chatDocId);
+		const chatDocSnap = await chatDocRef.get();
+		const chatHistory = chatDocSnap.data().chat_history;
+
+		const reqIdx = chatHistory.findIndex(msg => msg.id == id)
+
+		if(reqIdx == -1) throw "Required message not found";
+
+		chatHistory.splice(reqIdx, 1);
+
+		await chatDocRef.update({
+			chat_history: chatHistory
+		})
+
+		this.io.to(this.roomId).emit('chat_delete_server_to_client', { id, chatDocId, roomId: this.roomId })
+
+		return { success: `Successfully deleted chat in roomId: ${this.roomId}` };
+	}
+
+	async editChatMessage({ id, chatDocId, newText }) {
+		const chatDocRef = this.roomRef.collection('chat_history').doc(chatDocId);
+		const chatDocSnap = await chatDocRef.get();
+		const chatHistory = chatDocSnap.data().chat_history;
+
+		const reqIdx = chatHistory.findIndex(msg => msg.id == id)
+
+		if(reqIdx == -1) throw "Required message not found";
+
+		chatHistory[reqIdx].chatInfo = newText
+		chatHistory[reqIdx].isMsgEdited = true
+
+		await chatDocRef.update({
+			chat_history: chatHistory
+		})
+
+		this.io.to(this.roomId).emit('chat_edit_server_to_client', { id, chatDocId, roomId: this.roomId, newText })
+
+		return { success: `Successfully edited chat in roomId: ${this.roomId}` };
+
 	}
 }

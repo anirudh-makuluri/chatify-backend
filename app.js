@@ -246,5 +246,31 @@ function initIO() {
 				callback({ error })
 			}
 		})
+
+		socket.on('chat_delete_client_to_server', async ({ id, chatDocId, roomId }, callback) => {
+			try {
+				if(!id || !chatDocId || !roomId) throw "One or more information is missing"
+
+				const room = roomList.get(roomId);
+				const response = await room.deleteChatMessage({ id, chatDocId });
+
+				callback(response)
+			} catch (error) {
+				callback({ error })
+			}
+		})
+
+		socket.on('chat_edit_client_to_server', async ({ id, chatDocId, roomId, newText }, callback) => {
+			try {
+				if(!id || !chatDocId || !roomId || !newText) throw "One or more information is missing"
+
+				const room = roomList.get(roomId);
+				const response = await room.editChatMessage({ id, chatDocId, newText});
+
+				callback(response)
+			} catch (error) {
+				callback({ error })
+			}
+		})
 	});
 }
