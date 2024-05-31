@@ -187,4 +187,51 @@ module.exports = class Room {
 		return { success: `Successfully edited chat in roomId: ${this.roomId}` };
 
 	}
+
+	async saveChatMessage({ id, chatDocId }){
+		const chatDocRef = this.roomRef.collection('chat_history').doc(chatDocId);
+		const chatDocSnap = await chatDocRef.get();
+		const chatHistory = chatDocSnap.data().chat_history;
+
+		const roomSnap = await this.roomRef.get();
+
+		const reqIdx = chatHistory.findIndex(msg => msg.id == id)
+
+		if(reqIdx == -1) throw "Required message not found";
+
+		const isMsgSaved = chatHistory[reqIdx].isMsgSaved || false;
+
+		if(isMsgSaved) {
+			chatHistory[reqIdx].isMsgSaved = false;
+
+			const savedMessages = roomSnap.data().saved_messages || [];
+
+			const reqSavedMsgIdx = savedMessages.findIndex(msg => msg.id == id);
+
+			if(reqSavedMsgIdx != -1) {
+				savedMessages.splice(reqSavedMsgIdx, 1);
+				
+				await this.roomRef.update({
+					saved_messages: savedMessages
+				})
+			}
+		} else {
+			chatHistory[reqIdx].isMsgSaved = true;
+
+			await this.roomRef.update({
+				saved_messages: config.firebase.admin.firestore.FieldValue.arrayUnion({
+					...chatHistory[reqIdx]
+				})
+			})
+
+		}
+
+		await chatDocRef.update({
+			chat_history: chatHistory,
+		})
+
+		this.io.to(this.roomId).emit('chat_save_server_to_client', { id, chatDocId, roomId: this.roomId })
+
+		return { success: `Successfully saved chat in roomId: ${this.roomId}` };
+	}
 }

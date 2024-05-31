@@ -272,5 +272,18 @@ function initIO() {
 				callback({ error })
 			}
 		})
+
+		socket.on('chat_save_client_to_server', async ({ id, chatDocId, roomId }, callback) => {
+			try {
+				if(!id || !chatDocId || !roomId) throw "One or more information is missing"
+
+				const room = roomList.get(roomId);
+				const response = await room.saveChatMessage({ id, chatDocId});
+
+				callback(response)
+			} catch (error) {
+				callback({ error })
+			}
+		})
 	});
 }
