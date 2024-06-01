@@ -11,7 +11,7 @@ const corsOptions = {
 	credentials: true
 };
 
-router.options('/session/', cors(corsOptions))
+//router.options('/session/', cors(corsOptions))
 
 router.get('/', (req, res) => {
 	console.log("Pinged :)");
@@ -81,3 +81,5 @@ router.delete('/session', (req, res) => {
 
 
 module.exports = router
+
+export {};

@@ -1,6 +1,36 @@
 require('dotenv').config()
 
-module.exports = {
+interface ServiceAccount {
+	type: string | undefined;
+	project_id: string | undefined;
+	private_key_id: string | undefined;
+	private_key: string | undefined;
+	client_email: string | undefined;
+	client_id: string | undefined;
+	auth_uri: string | undefined;
+	token_uri: string | undefined;
+	auth_provider_x509_cert_url: string | undefined;
+	client_x509_cert_url: string | undefined;
+	universe_domain: string | undefined;
+}
+
+interface Config {
+	PORT: string | undefined;
+	expiresIn: number;
+	firebase: {
+		storageBucketName: string;
+	};
+	serviceAccount: ServiceAccount;
+	chatDocSize: number;
+	allowedOrigins: string[];
+	storageBucketCorsConfiguration: {
+		origin: string[];
+		method: string[];
+		maxAgeSeconds: number;
+	};
+}
+
+const config : Config = {
 	PORT: process.env.PORT,
 	expiresIn: 60 * 60 * 24 * 60 * 1000, //60 days
 	firebase: {
@@ -22,9 +52,12 @@ module.exports = {
 	chatDocSize: 50,
 	allowedOrigins: ['http://localhost:3000', 'chatify-a.vercel.app', 'http://localhost:8192', 'http://localhost:8081', 'exp://192.168.0.102:8081', 'http://192.168.0.102:8081'],
 	storageBucketCorsConfiguration: {
-		"origin": this.allowedOrigins,
+		"origin": ['http://localhost:3000', 'chatify-a.vercel.app', 'http://localhost:8192', 'http://localhost:8081', 'exp://192.168.0.102:8081', 'http://192.168.0.102:8081'],
 		"method": ["GET"],
 		"maxAgeSeconds": 3600
 	}
 }
 
+
+module.exports = config
+export {};

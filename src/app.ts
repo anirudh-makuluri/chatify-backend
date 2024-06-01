@@ -39,7 +39,7 @@ app.use((req, res, next) => {
 });
 
 const corsOptions = {
-	origin: true, //included origin as true
+	origin: config.allowedOrigins, //included origin as true
 	credentials: true, //included credentials as true
 };
 
@@ -75,11 +75,11 @@ const roomList = new Map();
 initIO();
 
 function initIO() {
-	function parseCookieString(cookieString) {
-		const cookies = {};
+	function parseCookieString(cookieString: string) {
+		const cookies : { session: string } | {} = {};
 		if (cookieString) {
 			cookieString.split(';').forEach(token => {
-				[key, value] = token.split('=');
+				const [key, value] = token.split('=');
 				if (key && value) {
 					cookies[key.trim()] = value.trim();
 				}
@@ -91,7 +91,8 @@ function initIO() {
 
 
 	io.use(async (socket, next) => {
-		const sessionCookie = parseCookieString(socket.handshake.headers.cookie).session || '';
+		//@ts-ignore
+		const sessionCookie = parseCookieString(socket.handshake.headers.cookie)?.session || '';
 
 		const decodedClaims = await admin.auth().verifySessionCookie(sessionCookie, false)
 			.then(decodedClaims => decodedClaims).catch((err) => {

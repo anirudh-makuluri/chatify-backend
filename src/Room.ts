@@ -2,6 +2,17 @@ const config = require("./config");
 const utils = require("./utils");
 
 module.exports = class Room {
+	roomId: string;
+	io: any;
+	roomRef: any;
+	isGroup: Boolean;
+	members: any;
+	roomName: string;
+	photoUrl: string;
+	currentChatDocRef: any;
+	currentChatDocMsgCnt: number;
+	chatDocIds: any;
+	initChatPromise: any
 	constructor(roomId, io, roomRef, isGroup, members, roomName, photoUrl) {
 		this.roomId = roomId;
 		this.io = io;
@@ -235,3 +246,5 @@ module.exports = class Room {
 		return { success: `Successfully saved chat in roomId: ${this.roomId}` };
 	}
 }
+
+export {};

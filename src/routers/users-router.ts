@@ -89,3 +89,4 @@ router.post("/users/:uid/files", async function (req, res) {
 
 
 module.exports = router
+export {};
