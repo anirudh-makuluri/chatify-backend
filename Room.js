@@ -50,7 +50,7 @@ module.exports = class Room {
 		chatEvent.time = new Date();
 
 		const chatObject = {
-			id: chatEvent.chatId,
+			id: chatEvent.id,
 			chatDocId: chatEvent.chatDocId,
 			userUid: chatEvent.userUid,
 			type: chatEvent.type,
@@ -94,4 +94,145 @@ module.exports = class Room {
 
 		return { success: `Successfully sent chat msg to roomId: ${this.roomId}` };
 	}
+
+	async deleteChatMessage({ id, chatDocId }){
+		const chatDocRef = this.roomRef.collection('chat_history').doc(chatDocId);
+		const chatDocSnap = await chatDocRef.get();
+		const chatHistory = chatDocSnap.data().chat_history;
+
+		const reqIdx = chatHistory.findIndex(msg => msg.id == id)
+
+		if(reqIdx == -1) throw "Required message not found";
+
+		chatHistory.splice(reqIdx, 1);
+
+		await chatDocRef.update({
+			chat_history: chatHistory
+		})
+
+		this.io.to(this.roomId).emit('chat_delete_server_to_client', { id, chatDocId, roomId: this.roomId })
+
+		return { success: `Successfully deleted chat in roomId: ${this.roomId}` };
+	}
+
+	async editChatMessage({ id, chatDocId, newText }) {
+		const chatDocRef = this.roomRef.collection('chat_history').doc(chatDocId);
+		const chatDocSnap = await chatDocRef.get();
+		const chatHistory = chatDocSnap.data().chat_history;
+
+		const reqIdx = chatHistory.findIndex(msg => msg.id == id)
+
+		if(reqIdx == -1) throw "Required message not found";
+
+		chatHistory[reqIdx].chatInfo = newText
+		chatHistory[reqIdx].isMsgEdited = true
+
+		await chatDocRef.update({
+			chat_history: chatHistory
+		})
+
+		this.io.to(this.roomId).emit('chat_edit_server_to_client', { id, chatDocId, roomId: this.roomId, newText })
+
+		return { success: `Successfully edited chat in roomId: ${this.roomId}` };
+
+	}
+
+	async saveChatMessage({ id, chatDocId }){
+		const chatDocRef = this.roomRef.collection('chat_history').doc(chatDocId);
+		const chatDocSnap = await chatDocRef.get();
+		const chatHistory = chatDocSnap.data().chat_history;
+
+		const roomSnap = await this.roomRef.get();
+
+		const reqIdx = chatHistory.findIndex(msg => msg.id == id)
+
+		if(reqIdx == -1) throw "Required message not found";
+
+		const isMsgSaved = chatHistory[reqIdx].isMsgSaved || false;
+
+		if(isMsgSaved) {
+			chatHistory[reqIdx].isMsgSaved = false;
+
+			const savedMessages = roomSnap.data().saved_messages || [];
+
+			const reqSavedMsgIdx = savedMessages.findIndex(msg => msg.id == id);
+
+			if(reqSavedMsgIdx != -1) {
+				savedMessages.splice(reqSavedMsgIdx, 1);
+				
+				await this.roomRef.update({
+					saved_messages: savedMessages
+				})
+			}
+		} else {
+			chatHistory[reqIdx].isMsgSaved = true;
+
+			await this.roomRef.update({
+				saved_messages: config.firebase.admin.firestore.FieldValue.arrayUnion({
+					...chatHistory[reqIdx]
+				})
+			})
+
+		}
+
+		await chatDocRef.update({
+			chat_history: chatHistory,
+		})
+
+		this.io.to(this.roomId).emit('chat_save_server_to_client', { id, chatDocId, roomId: this.roomId })
+
+		return { success: `Successfully saved chat in roomId: ${this.roomId}` };
+	}
+
+	async updateReaction({ reactionId, id, chatDocId, userUid, userName }) {
+		const chatDocRef = this.roomRef.collection('chat_history').doc(chatDocId);
+		const chatDocSnap = await chatDocRef.get();
+		const chatHistory = chatDocSnap.data().chat_history;
+
+		const reqIdx = chatHistory.findIndex(msg => msg.id == id)
+
+		if(reqIdx == -1) throw "Required message not found";
+
+		const reactions = chatHistory[reqIdx].reactions || [];
+
+		const reqReactionIdx = reactions.findIndex(data => data.id == reactionId)
+
+		if(reqReactionIdx == -1) {
+			const newReactionItem = {
+				id: reactionId,
+				reactors: [{
+					uid: userUid,
+					name: userName
+				}]
+			}
+
+			reactions.push(newReactionItem);
+		} else {
+			const reqReactorIdx = reactions[reqReactionIdx].reactors.findIndex(data => data.uid == userUid)
+
+			if(reqReactorIdx == -1) {
+				reactions[reqReactionIdx].reactors.push({
+					name: userName,
+					uid: userUid
+				})
+			} else {
+				reactions[reqReactionIdx].reactors.splice(reqReactorIdx, 1);
+
+				if(reactions[reqReactionIdx].reactors.length == 0) {
+					reactions.splice(reqReactionIdx, 1)
+				}
+			}
+		}
+
+		chatHistory[reqIdx].reactions = reactions;
+
+		await chatDocRef.update({
+			chat_history: chatHistory,
+		})
+
+		this.io.to(this.roomId).emit('chat_reaction_server_to_client', { reactionId, id, chatDocId, userUid, userName, roomId: this.roomId })
+
+		return { success: `Successfully updated chat reaction in roomId: ${this.roomId}` };
+	}
+
 }

@@ -234,7 +234,55 @@ function initIO() {
 			}
 		});
 
+		socket.on('chat_reaction_client_to_server', async ({ reactionId, id, chatDocId, roomId, userUid, userName }, callback) => {
+			try {
+				if(!reactionId || !id || !chatDocId || !roomId || !userUid || !userName) throw "One or more information is missing"
+				const room = roomList.get(roomId);
+				const response = await room.updateReaction({ reactionId, id, chatDocId, userUid, userName });
 
+				callback(response)
+			} catch (error) {
+				callback({ error })
+			}
+		})
 
+		socket.on('chat_delete_client_to_server', async ({ id, chatDocId, roomId }, callback) => {
+			try {
+				if(!id || !chatDocId || !roomId) throw "One or more information is missing"
+
+				const room = roomList.get(roomId);
+				const response = await room.deleteChatMessage({ id, chatDocId });
+
+				callback(response)
+			} catch (error) {
+				callback({ error })
+			}
+		})
+
+		socket.on('chat_edit_client_to_server', async ({ id, chatDocId, roomId, newText }, callback) => {
+			try {
+				if(!id || !chatDocId || !roomId || !newText) throw "One or more information is missing"
+
+				const room = roomList.get(roomId);
+				const response = await room.editChatMessage({ id, chatDocId, newText});
+
+				callback(response)
+			} catch (error) {
+				callback({ error })
+			}
+		})
+
+		socket.on('chat_save_client_to_server', async ({ id, chatDocId, roomId }, callback) => {
+			try {
+				if(!id || !chatDocId || !roomId) throw "One or more information is missing"
+
+				const room = roomList.get(roomId);
+				const response = await room.saveChatMessage({ id, chatDocId});
+
+				callback(response)
+			} catch (error) {
+				callback({ error })
+			}
+		})
 	});
 }

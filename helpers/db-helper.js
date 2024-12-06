@@ -71,6 +71,10 @@ module.exports = {
 				}
 			}
 
+			const membersDataPromises = roomData.members.map(uid => this.getUserData(uid));
+
+			const membersData = await Promise.all(membersDataPromises);
+
 			if(roomData.is_group == false) {
 				const otherUserUid = roomData.members[0] == uid ? roomData.members[1] : roomData.members[0];
 
@@ -82,12 +86,14 @@ module.exports = {
 					messages: messages,
 					photo_url: reqData?.photo_url,
 					name: reqData?.name,
+					membersData
 				})
 			} else {
 				accumulator.push({
 					id: roomId,
 					...roomData,
-					messages: messages
+					messages: messages,
+					membersData
 				})
 			}
 
