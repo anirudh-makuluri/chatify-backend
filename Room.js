@@ -95,57 +95,6 @@ module.exports = class Room {
 		return { success: `Successfully sent chat msg to roomId: ${this.roomId}` };
 	}
 
-
-	async updateChatReaction({ reactionId, id, chatDocId, userUid, userName }) {
-		const chatDocRef = this.roomRef.collection('chat_history').doc(chatDocId);
-		const chatDocSnap = await chatDocRef.get();
-		const chatHistory = chatDocSnap.data().chat_history;
-
-		const reqIdx = chatHistory.findIndex(msg => msg.id == id)
-
-		if(reqIdx == -1) throw "Required message not found";
-
-
-		const reactions = chatHistory[reqIdx].reactions || [];
-
-		const reqReactionIdx = reactions.findIndex(data => data.id == reactionId);
-
-		if(reqReactionIdx == -1) {
-			const newReactionItem = {
-				id: reactionId,
-				reactors: [{
-					uid: userUid,
-					name: userName
-				}]
-			}
-			reactions.push(newReactionItem);
-		} else {
-			const reqReactorIdx = reactions[reqReactionIdx].reactors.findIndex(data => data.uid == userUid);
-
-			if(reqReactionIdx == -1) {
-				reactions[reqReactionIdx].reactors.push({
-					uid: userUid,
-					name: userName
-				});
-			} else {
-				reactions[reqReactionIdx].reactors.splice(reqReactorIdx, 1);
-				if(reactions[reqReactionIdx].reactors.length == 0) {
-					reactions.splice(reqReactionIdx, 1)
-				}
-			}
-		}
-
-		chatHistory[reqIdx].reactions = reactions
-
-		await chatDocRef.update({
-			chat_history: chatHistory
-		})
-
-		this.io.to(this.roomId).emit('chat_reaction_server_to_client', { reactionId, id, chatDocId, userUid, userName, roomId: this.roomId })
-
-		return { success: `Successfully sent chat reaction to roomId: ${this.roomId}` };
-	}
-
 	async deleteChatMessage({ id, chatDocId }){
 		const chatDocRef = this.roomRef.collection('chat_history').doc(chatDocId);
 		const chatDocSnap = await chatDocRef.get();
