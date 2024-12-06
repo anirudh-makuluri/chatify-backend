@@ -237,7 +237,6 @@ function initIO() {
 		socket.on('chat_reaction_client_to_server', async ({ reactionId, id, chatDocId, roomId, userUid, userName }, callback) => {
 			try {
 				if(!reactionId || !id || !chatDocId || !roomId || !userUid || !userName) throw "One or more information is missing"
-
 				const room = roomList.get(roomId);
 				const response = await room.updateReaction({ reactionId, id, chatDocId, userUid, userName });
 
