@@ -1,7 +1,7 @@
 const Router = require('express').Router;
 const config = require('../config');
 const dbHelper = require('../helpers/db-helper');
-const UUID = require("uuid-v4")
+const { v4: UUID } = require("uuid")
 
 const router = new Router();
 
@@ -87,5 +87,66 @@ router.post("/users/:uid/files", async function (req, res) {
 	});
 })
 
+	// AI Assistant Routes
+router.post("/users/:uid/ai-assistant/room", async function (req, res) {
+	try {
+		const userId = req.params.uid;
+		
+		if (!userId) {
+			return res.status(400).send({ error: "User ID is required" });
+		}
+
+		// Create or get AI assistant room (only one per user)
+		const aiRoomId = `ai-assistant-${userId}`;
+		const roomRef = config.firebase.db.collection('rooms').doc(aiRoomId);
+		
+		// Check if AI room already exists
+		const roomSnap = await roomRef.get();
+		if (roomSnap.exists) {
+			return res.send({ 
+				success: true, 
+				roomId: aiRoomId, 
+				message: 'AI Assistant room already exists',
+				room: {
+					id: aiRoomId,
+					...roomSnap.data()
+				}
+			});
+		}
+
+		// Create new AI assistant room
+		const roomData = {
+			roomId: aiRoomId,
+			members: [userId, 'ai-assistant'],
+			is_group: false,
+			name: 'Chatify AI Assistant',
+			photo_url: 'https://ui-avatars.com/api/?name=AI&background=6366f1&color=ffffff',
+			created_at: new Date(),
+			is_ai_room: true
+		};
+
+		await roomRef.set(roomData);
+
+		// Add AI room to user's joined rooms
+		const userRef = config.firebase.db.collection('auth_users').doc(userId);
+		await userRef.update({
+			joined_rooms: config.firebase.admin.firestore.FieldValue.arrayUnion(aiRoomId)
+		});
+
+		res.send({ 
+			success: true, 
+			roomId: aiRoomId,
+			message: 'AI Assistant room created successfully',
+			room: {
+				id: aiRoomId,
+				...roomData
+			}
+		});
+
+	} catch (error) {
+		console.error('AI Room Creation Error:', error);
+		res.status(500).send({ error: 'Failed to create AI assistant room' });
+	}
+});
 
 module.exports = router

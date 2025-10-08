@@ -60,6 +60,7 @@ module.exports = class Room {
 			userPhoto: chatEvent.userPhoto,
 			isMsgEdited: chatEvent.isMsgEdited ?? false,
 			isMsgSaved: chatEvent.isMsgSaved ?? false,
+			isAIMessage: chatEvent.isAIMessage ?? false,
 			time: chatEvent.time
 		}
 
@@ -90,6 +91,7 @@ module.exports = class Room {
 			})
 		}
 
+		console.log('chatEvent', chatEvent)
 		this.io.to(this.roomId).emit('chat_event_server_to_client', chatEvent)
 
 		return { success: `Successfully sent chat msg to roomId: ${this.roomId}` };
@@ -234,5 +236,32 @@ module.exports = class Room {
 
 		return { success: `Successfully updated chat reaction in roomId: ${this.roomId}` };
 	}
+
+	// AI Assistant Helper Methods
+	async getRecentChatHistory(limit = 10) {
+		try {
+			const allMessages = [];
+			
+			// Get messages from all chat documents
+			for (const chatDocId of this.chatDocIds) {
+				const chatDocRef = this.roomRef.collection('chat_history').doc(chatDocId);
+				const chatDocSnap = await chatDocRef.get();
+				
+				if (chatDocSnap.exists) {
+					const chatHistory = chatDocSnap.data().chat_history || [];
+					allMessages.push(...chatHistory);
+				}
+			}
+			
+			// Sort by time (newest first) and limit
+			allMessages.sort((a, b) => new Date(b.time) - new Date(a.time));
+			return allMessages.slice(0, limit);
+			
+		} catch (error) {
+			console.error('Error getting recent chat history:', error);
+			return [];
+		}
+	}
+
 
 }
