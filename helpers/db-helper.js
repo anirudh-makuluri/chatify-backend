@@ -71,6 +71,25 @@ module.exports = {
 				}
 			}
 
+			if(roomData.is_ai_room) {
+				accumulator.push({
+					id: roomId,
+					...roomData,
+					messages: messages,
+					membersData: [
+						{
+							uid: 'ai-assistant',
+							name: 'Chatify AI',
+							photo_url: 'https://ui-avatars.com/api/?name=AI&background=6366f1&color=ffffff',
+							email: 'ai-assistant@chatify.com'
+						}
+					]
+				})
+
+				return accumulator;
+			}
+
+
 			const membersDataPromises = roomData.members.map(uid => this.getUserData(uid));
 
 			const membersData = await Promise.all(membersDataPromises);
