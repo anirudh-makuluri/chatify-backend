@@ -149,4 +149,69 @@ router.post("/users/:uid/ai-assistant/room", async function (req, res) {
 	}
 });
 
+// GROUP CHAT ROUTES
+// Create a new group
+router.post('/users/:uid/groups', async (req, res) => {
+	try {
+		const creatorUid = req.params.uid;
+		const { name, photoUrl, memberUids } = req.body || {};
+		console.log(name, photoUrl, memberUids);
+		const response = await dbHelper.createGroup(creatorUid, { name, photoUrl, memberUids });
+		res.send(response);
+	} catch (error) {
+		res.status(400).send({ error });
+	}
+});
+
+// Add group members
+router.post('/users/:uid/groups/:roomId/members', async (req, res) => {
+	try {
+		const actorUid = req.params.uid;
+		const roomId = req.params.roomId;
+		const { memberUids } = req.body || {};
+		const response = await dbHelper.addGroupMembers(roomId, actorUid, memberUids || []);
+		res.send(response);
+	} catch (error) {
+		res.status(400).send({ error });
+	}
+});
+
+// Remove a member
+router.delete('/users/:uid/groups/:roomId/members/:memberUid', async (req, res) => {
+	try {
+		const actorUid = req.params.uid;
+		const roomId = req.params.roomId;
+		const memberUid = req.params.memberUid;
+		const response = await dbHelper.removeGroupMember(roomId, actorUid, memberUid);
+		res.send(response);
+	} catch (error) {
+		res.status(400).send({ error });
+	}
+});
+
+// Update group info (name/photo)
+router.patch('/users/:uid/groups/:roomId', async (req, res) => {
+	try {
+		const actorUid = req.params.uid;
+		const roomId = req.params.roomId;
+		const { name, photoUrl } = req.body || {};
+		const response = await dbHelper.updateGroupInfo(roomId, actorUid, { name, photoUrl });
+		res.send(response);
+	} catch (error) {
+		res.status(400).send({ error });
+	}
+});
+
+// Delete group
+router.delete('/users/:uid/groups/:roomId', async (req, res) => {
+	try {
+		const actorUid = req.params.uid;
+		const roomId = req.params.roomId;
+		const response = await dbHelper.deleteGroup(roomId, actorUid);
+		res.send(response);
+	} catch (error) {
+		res.status(400).send({ error });
+	}
+});
+
 module.exports = router
