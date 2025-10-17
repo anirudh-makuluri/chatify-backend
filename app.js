@@ -93,7 +93,7 @@ function initIO() {
 	}
 
 
-	io.use(async (socket, next) => {
+    io.use(async (socket, next) => {
 		const sessionCookie = parseCookieString(socket.handshake.headers.cookie).session || '';
 
 		const decodedClaims = await admin.auth().verifySessionCookie(sessionCookie, false)
@@ -106,7 +106,7 @@ function initIO() {
 		console.log("socket.handshake.auth: ", socket.handshake.auth);
 		console.log("-----------------------------------------------");
 
-		if (decodedClaims) {
+        if (decodedClaims) {
 			socket.uid = decodedClaims.uid;
 			socket.email = decodedClaims.email;
 		} else {
@@ -120,10 +120,34 @@ function initIO() {
 			return next(new Error("invalid userName"));
 		}
 
-		socket.session = { currentSocketId: socket.id, name: name, uid: socket.uid, roomIds: [] };
+        socket.session = { currentSocketId: socket.id, name: name, uid: socket.uid, roomIds: [] };
 		sessionStore.set(socket.uid, socket.session);
 		console.log(`Adding ${socket.uid} to sessionStore`);
 		console.log(sessionStore);
+        try {
+            // set user online on successful auth
+            const userRef = config.firebase.db.collection('auth_users').doc(socket.uid);
+			await userRef.update({ is_online: true });
+
+			// fetch friend list for presence broadcasting
+			const userSnap = await userRef.get();
+			const userData = userSnap.exists ? userSnap.data() : {};
+			socket.session.friendUids = userData.friend_list || [];
+
+			// notify online friends about this user's presence
+			for (const friendUid of socket.session.friendUids) {
+				const friendSession = sessionStore.get(friendUid);
+				if (friendSession) {
+					io.to(friendSession.currentSocketId).emit('presence_update', {
+						uid: socket.uid,
+						is_online: true,
+						last_seen: null
+					});
+				}
+			}
+        } catch (e) {
+            console.error('Failed to set user online:', e);
+        }
 		return next();
 	})
 
@@ -212,11 +236,33 @@ function initIO() {
 		});
 
 
-		socket.on('disconnect', () => {
+		socket.on('disconnect', async () => {
 			console.log("A client disconnected :", socket.uid);
 			const sessionId = socket.uid;
 			console.log(`Deleting ${socket.uid} from sessionStore`)
 			sessionStore.delete(sessionId);
+
+            try {
+                // mark user offline and update last seen
+                const userRef = config.firebase.db.collection('auth_users').doc(socket.uid);
+				const lastSeen = config.firebase.admin.firestore.FieldValue.serverTimestamp();
+				await userRef.update({ is_online: false, last_seen: lastSeen });
+
+				// notify online friends about this user's presence change
+				const friendUids = socket.session.friendUids || [];
+				for (const friendUid of friendUids) {
+					const friendSession = sessionStore.get(friendUid);
+					if (friendSession) {
+						io.to(friendSession.currentSocketId).emit('presence_update', {
+							uid: socket.uid,
+							is_online: false,
+							last_seen: Date.now()
+						});
+					}
+				}
+            } catch (e) {
+                console.error('Failed to set user offline:', e);
+            }
 
 			const roomIds = socket.session.roomIds || [];
 			roomIds.forEach((roomId) => {

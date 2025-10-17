@@ -19,7 +19,9 @@ module.exports = {
 						name: user.name,
 						email: user.email,
 						photo_url: `https://ui-avatars.com/api/?name=${user.name.replaceAll(" ", "")}&length=1`,
-						created_at: new Date(),
+						created_at: config.firebase.admin.firestore.FieldValue.serverTimestamp(),
+						is_online: false,
+						last_seen: config.firebase.admin.firestore.FieldValue.serverTimestamp(),
 						friend_list: [],
 						sent_friend_requests: [],
 						received_friend_requests: [],
@@ -119,12 +121,18 @@ module.exports = {
 			return accumulator;
 		}, Promise.resolve([]));
 
+		const lastSeenMs = userData.last_seen && typeof userData.last_seen.toMillis === 'function'
+			? userData.last_seen.toMillis()
+			: (typeof userData.last_seen === 'number' ? userData.last_seen : null);
+
 		return {
 			success: "Fetched user details",
 			user: {
 				email: userData.email,
 				name: userData.name,
 				photo_url: userData.photo_url,
+				is_online: userData.is_online || false,
+				last_seen: lastSeenMs,
 				received_friend_requests: recFrndReqData,
 				sent_friend_requests: sentFrndReqData,
 				friend_list: frndListData,
@@ -141,11 +149,17 @@ module.exports = {
 
 		const userData = snapshot.data();
 
+		const lastSeenMs = userData.last_seen && typeof userData.last_seen.toMillis === 'function'
+			? userData.last_seen.toMillis()
+			: (typeof userData.last_seen === 'number' ? userData.last_seen : null);
+
 		return {
 			email: userData.email,
 			name: userData.name,
 			photo_url: userData.photo_url,
-			uid: userData.uid
+			uid: userData.uid,
+			is_online: userData.is_online || false,
+			last_seen: lastSeenMs
 		}
 	},
 
