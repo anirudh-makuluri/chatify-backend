@@ -10,9 +10,11 @@ const config = require('./config');
 
 const sessionRouter = require('./routers/session-router');
 const usersRouter = require('./routers/users-router');
+const scheduledMessagesRouter = require('./routers/scheduled-messages-router');
 const dbHelper = require('./helpers/db-helper');
 const aiHelper = require('./helpers/ai-helper')
 const Room = require('./Room');
+const SchedulerService = require('./helpers/scheduler-helper');
 
 const app = express();
 const httpServer = createServer(app);
@@ -52,6 +54,7 @@ app.use(cookieParser());
 app.use(fileUpload());
 app.use(sessionRouter);
 app.use(usersRouter);
+app.use('/api/scheduled-messages', scheduledMessagesRouter);
 
 
 admin.initializeApp({
@@ -73,6 +76,11 @@ async function configureStorageBucketCors() {
 
 const sessionStore = new Map();
 const roomList = new Map();
+const schedulerService = new SchedulerService(io, roomList);
+
+// Start the scheduler service
+schedulerService.start();
+
 initIO();
 
 
@@ -471,6 +479,85 @@ function initIO() {
 			} catch (error) {
 				console.error('AI Smart Replies Error:', error);
 				callback({ error: 'Failed to generate smart replies' });
+			}
+		});
+
+		// SCHEDULED MESSAGES EVENTS
+		socket.on('schedule_message', async ({ scheduledMessage }, callback) => {
+			try {
+				if (!scheduledMessage.userUid || !scheduledMessage.roomId || !scheduledMessage.message || !scheduledMessage.scheduledTime) {
+					throw "Required fields: userUid, roomId, message, scheduledTime";
+				}
+
+				// Verify user is authorized to schedule messages in this room
+				const roomRef = config.firebase.db.collection('rooms').doc(scheduledMessage.roomId);
+				const roomSnap = await roomRef.get();
+				if (!roomSnap.exists) throw "Room not found";
+				
+				const roomData = roomSnap.data();
+				if (!roomData.members.includes(scheduledMessage.userUid)) {
+					throw "User not authorized to schedule messages in this room";
+				}
+
+				// Get user data for the scheduled message
+				const userData = await dbHelper.getUserData(scheduledMessage.userUid);
+				
+				const response = await dbHelper.createScheduledMessage({
+					...scheduledMessage,
+					userName: userData.name,
+					userPhoto: userData.photo_url
+				});
+
+				callback(response);
+			} catch (error) {
+				console.error('Schedule Message Error:', error);
+				callback({ error: error.message || 'Failed to schedule message' });
+			}
+		});
+
+		socket.on('get_scheduled_messages', async ({ userUid, roomId }, callback) => {
+			try {
+				if (!userUid) throw "userUid is required";
+
+				const response = await dbHelper.getScheduledMessages(userUid, roomId);
+				callback(response);
+			} catch (error) {
+				console.error('Get Scheduled Messages Error:', error);
+				callback({ error: error.message || 'Failed to get scheduled messages' });
+			}
+		});
+
+		socket.on('update_scheduled_message', async ({ scheduledMessageId, updates, userUid }, callback) => {
+			try {
+				if (!scheduledMessageId || !userUid) throw "scheduledMessageId and userUid are required";
+
+				// Verify ownership
+				const scheduledMessageRef = config.firebase.db.collection('scheduled_messages').doc(scheduledMessageId);
+				const scheduledMessageSnap = await scheduledMessageRef.get();
+				if (!scheduledMessageSnap.exists) throw "Scheduled message not found";
+				
+				const scheduledMessageData = scheduledMessageSnap.data();
+				if (scheduledMessageData.userUid !== userUid) {
+					throw "Unauthorized to update this scheduled message";
+				}
+
+				const response = await dbHelper.updateScheduledMessage(scheduledMessageId, updates);
+				callback(response);
+			} catch (error) {
+				console.error('Update Scheduled Message Error:', error);
+				callback({ error: error.message || 'Failed to update scheduled message' });
+			}
+		});
+
+		socket.on('delete_scheduled_message', async ({ scheduledMessageId, userUid }, callback) => {
+			try {
+				if (!scheduledMessageId || !userUid) throw "scheduledMessageId and userUid are required";
+
+				const response = await dbHelper.deleteScheduledMessage(scheduledMessageId, userUid);
+				callback(response);
+			} catch (error) {
+				console.error('Delete Scheduled Message Error:', error);
+				callback({ error: error.message || 'Failed to delete scheduled message' });
 			}
 		});
 
