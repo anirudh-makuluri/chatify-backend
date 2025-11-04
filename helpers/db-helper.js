@@ -71,6 +71,29 @@ module.exports = {
 				}
 			}
 
+			if(roomData.is_ai_room) {
+				accumulator.push({
+					id: roomId,
+					...roomData,
+					messages: messages,
+					membersData: [
+						{
+							uid: 'ai-assistant',
+							name: 'Chatify AI',
+							photo_url: 'https://ui-avatars.com/api/?name=AI&background=6366f1&color=ffffff',
+							email: 'ai-assistant@chatify.com'
+						}
+					]
+				})
+
+				return accumulator;
+			}
+
+
+			const membersDataPromises = roomData.members.map(uid => this.getUserData(uid));
+
+			const membersData = await Promise.all(membersDataPromises);
+
 			if(roomData.is_group == false) {
 				const otherUserUid = roomData.members[0] == uid ? roomData.members[1] : roomData.members[0];
 
@@ -82,12 +105,14 @@ module.exports = {
 					messages: messages,
 					photo_url: reqData?.photo_url,
 					name: reqData?.name,
+					membersData
 				})
 			} else {
 				accumulator.push({
 					id: roomId,
 					...roomData,
-					messages: messages
+					messages: messages,
+					membersData
 				})
 			}
 
@@ -301,5 +326,143 @@ module.exports = {
 		} catch (error) {
 			throw error
 		}
+	}
+	,
+
+	// GROUPS
+	createGroup: async function (creatorUid, { name, photoUrl, memberUids }) {
+		if (!creatorUid) throw "creatorUid not found";
+		if (!name || typeof name !== 'string') throw "Group name is required";
+
+		const uniqueMembers = Array.from(new Set([creatorUid, ...(memberUids || [])]));
+		if (uniqueMembers.length < 2) throw "Group must have at least 2 members";
+
+		const roomId = `group_${require('uuid').v4()}`;
+		const roomRef = config.firebase.db.collection('rooms').doc(roomId);
+
+		const roomData = {
+			roomId,
+			members: uniqueMembers,
+			is_group: true,
+			name,
+			photo_url: photoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0ea5e9&color=ffffff`,
+			created_at: new Date(),
+			chat_doc_ids: []
+		};
+
+		await roomRef.set(roomData);
+
+		// add roomId to each member's joined_rooms
+		const batch = config.firebase.db.batch();
+		for (const memberUid of uniqueMembers) {
+			const userRef = config.firebase.db.collection('auth_users').doc(memberUid);
+			batch.update(userRef, {
+				joined_rooms: config.firebase.admin.firestore.FieldValue.arrayUnion(roomId)
+			});
+		}
+		await batch.commit();
+
+		return { success: "Group created", roomId, room: roomData };
+	},
+
+	addGroupMembers: async function (roomId, actorUid, memberUids) {
+		if (!roomId) throw "roomId not found";
+		if (!actorUid) throw "actorUid not found";
+		if (!Array.isArray(memberUids) || memberUids.length === 0) throw "memberUids required";
+
+		const roomRef = config.firebase.db.collection('rooms').doc(roomId);
+		const roomSnap = await roomRef.get();
+		if (!roomSnap.exists) throw "Room not found";
+		const room = roomSnap.data();
+		if (!room.is_group) throw "Not a group room";
+
+		const currentMembers = room.members || [];
+		const toAdd = memberUids.filter(uid => !currentMembers.includes(uid));
+		if (toAdd.length === 0) return { success: "No new members to add", roomId };
+
+		await roomRef.update({
+			members: config.firebase.admin.firestore.FieldValue.arrayUnion(...toAdd)
+		});
+
+		const batch = config.firebase.db.batch();
+		for (const uid of toAdd) {
+			const userRef = config.firebase.db.collection('auth_users').doc(uid);
+			batch.update(userRef, {
+				joined_rooms: config.firebase.admin.firestore.FieldValue.arrayUnion(roomId)
+			});
+		}
+		await batch.commit();
+
+		return { success: "Members added", added: toAdd, roomId };
+	},
+
+	removeGroupMember: async function (roomId, actorUid, memberUid) {
+		if (!roomId) throw "roomId not found";
+		if (!actorUid) throw "actorUid not found";
+		if (!memberUid) throw "memberUid required";
+
+		const roomRef = config.firebase.db.collection('rooms').doc(roomId);
+		const roomSnap = await roomRef.get();
+		if (!roomSnap.exists) throw "Room not found";
+		const room = roomSnap.data();
+		if (!room.is_group) throw "Not a group room";
+
+		await roomRef.update({
+			members: config.firebase.admin.firestore.FieldValue.arrayRemove(memberUid)
+		});
+
+		const userRef = config.firebase.db.collection('auth_users').doc(memberUid);
+		await userRef.update({
+			joined_rooms: config.firebase.admin.firestore.FieldValue.arrayRemove(roomId)
+		});
+
+		return { success: "Member removed", removed: memberUid, roomId };
+	},
+
+	updateGroupInfo: async function (roomId, actorUid, { name, photoUrl }) {
+		if (!roomId) throw "roomId not found";
+		if (!actorUid) throw "actorUid not found";
+
+		const updates = {};
+		if (name) updates.name = name;
+		if (photoUrl) updates.photo_url = photoUrl;
+		if (Object.keys(updates).length === 0) return { success: "No updates", roomId };
+
+		const roomRef = config.firebase.db.collection('rooms').doc(roomId);
+		await roomRef.update(updates);
+		return { success: "Group updated", roomId, updates };
+	},
+
+	deleteGroup: async function (roomId, actorUid) {
+		if (!roomId) throw "roomId not found";
+		if (!actorUid) throw "actorUid not found";
+
+		const roomRef = config.firebase.db.collection('rooms').doc(roomId);
+		const roomSnap = await roomRef.get();
+		if (!roomSnap.exists) throw "Room not found";
+		const room = roomSnap.data();
+		if (!room.is_group) throw "Not a group room";
+
+		// Remove roomId from each member's joined_rooms
+		const batch = config.firebase.db.batch();
+		for (const uid of room.members || []) {
+			const userRef = config.firebase.db.collection('auth_users').doc(uid);
+			batch.update(userRef, {
+				joined_rooms: config.firebase.admin.firestore.FieldValue.arrayRemove(roomId)
+			});
+		}
+
+		// Delete all chat_history subcollection documents
+		const chatHistoryRef = roomRef.collection('chat_history');
+		const chatDocsSnap = await chatHistoryRef.get();
+		chatDocsSnap.forEach(doc => {
+			batch.delete(doc.ref);
+		});
+
+		// Delete the room document itself
+		batch.delete(roomRef);
+
+		await batch.commit();
+		return { success: "Group deleted", roomId };
 	}
 }

@@ -11,6 +11,7 @@ const config = require('./config');
 const sessionRouter = require('./routers/session-router');
 const usersRouter = require('./routers/users-router');
 const dbHelper = require('./helpers/db-helper');
+const aiHelper = require('./helpers/ai-helper')
 const Room = require('./Room');
 
 const app = express();
@@ -73,6 +74,8 @@ async function configureStorageBucketCors() {
 const sessionStore = new Map();
 const roomList = new Map();
 initIO();
+
+
 
 function initIO() {
 	function parseCookieString(cookieString) {
@@ -163,11 +166,49 @@ function initIO() {
 			callback(response)
 		})
 
-		socket.on("chat_event_client_to_server", (data) => {
+		socket.on("chat_event_client_to_server", async (data) => {
 			if (!roomList.has(data.roomId)) return;
 
 			const room = roomList.get(data.roomId);
-			room.newChatEvent(data);
+			await room.newChatEvent(data);
+
+			// Check if this is an AI assistant room and auto-respond
+			if (data.roomId.startsWith('ai-assistant-') && data.userUid !== 'ai-assistant') {
+				// This is a user message in an AI room, generate AI response
+				try {
+					// Get recent chat history for context
+					const chatHistory = await room.getRecentChatHistory(10);
+					const roomContext = {
+						isGroup: room.isGroup,
+						roomName: room.roomName,
+						memberCount: room.members.length
+					};
+
+					// Generate AI response
+					const aiResponse = await aiHelper.generateChatResponse(data.chatInfo, chatHistory, roomContext);
+
+					if (aiResponse.success) {
+						// Create AI message object
+						const aiMessage = {
+							id: require('uuid').v4(),
+							roomId: data.roomId,
+							userUid: 'ai-assistant',
+							userName: 'Chatify AI',
+							userPhoto: 'https://ui-avatars.com/api/?name=AI&background=6366f1&color=ffffff',
+							type: 'text',
+							chatInfo: aiResponse.response,
+							time: aiResponse.timestamp,
+							isAIMessage: true
+						};
+
+						// Send AI response as a chat event
+						await room.newChatEvent(aiMessage);
+					}
+				} catch (error) {
+					console.error('Auto AI Response Error:', error);
+					// Don't fail the original message if AI response fails
+				}
+			}
 		});
 
 
@@ -234,7 +275,158 @@ function initIO() {
 			}
 		});
 
+		socket.on('chat_reaction_client_to_server', async ({ reactionId, id, chatDocId, roomId, userUid, userName }, callback) => {
+			try {
+				if(!reactionId || !id || !chatDocId || !roomId || !userUid || !userName) throw "One or more information is missing"
+				const room = roomList.get(roomId);
+				const response = await room.updateReaction({ reactionId, id, chatDocId, userUid, userName });
 
+				callback(response)
+			} catch (error) {
+				callback({ error })
+			}
+		})
+
+		socket.on('chat_delete_client_to_server', async ({ id, chatDocId, roomId }, callback) => {
+			try {
+				if(!id || !chatDocId || !roomId) throw "One or more information is missing"
+
+				const room = roomList.get(roomId);
+				const response = await room.deleteChatMessage({ id, chatDocId });
+
+				callback(response)
+			} catch (error) {
+				callback({ error })
+			}
+		})
+
+		socket.on('chat_edit_client_to_server', async ({ id, chatDocId, roomId, newText }, callback) => {
+			try {
+				if(!id || !chatDocId || !roomId || !newText) throw "One or more information is missing"
+
+				const room = roomList.get(roomId);
+				const response = await room.editChatMessage({ id, chatDocId, newText});
+
+				callback(response)
+			} catch (error) {
+				callback({ error })
+			}
+		})
+
+		socket.on('chat_save_client_to_server', async ({ id, chatDocId, roomId }, callback) => {
+			try {
+				if(!id || !chatDocId || !roomId) throw "One or more information is missing"
+
+				const room = roomList.get(roomId);
+				const response = await room.saveChatMessage({ id, chatDocId});
+
+				callback(response)
+			} catch (error) {
+				callback({ error })
+			}
+		})
+
+		// AI Assistant Events
+		socket.on('ai_chat_request', async ({ message, roomId }, callback) => {
+			try {
+				if (!message || !roomId) throw "Message and roomId are required";
+
+				const room = roomList.get(roomId);
+				if (!room) throw "Room not found";
+
+				// Get recent chat history for context
+				const chatHistory = await room.getRecentChatHistory(10);
+				const roomContext = {
+					isGroup: room.isGroup,
+					roomName: room.roomName,
+					memberCount: room.members.length
+				};
+
+				// Generate AI response
+				const aiResponse = await aiHelper.generateChatResponse(message, chatHistory, roomContext);
+
+				if (aiResponse.success) {
+					// Create AI message object
+					const aiMessage = {
+						id: require('uuid').v4(),
+						roomId: roomId,
+						userUid: 'ai-assistant',
+						userName: 'Chatify AI',
+						userPhoto: 'https://ui-avatars.com/api/?name=AI&background=6366f1&color=ffffff',
+						type: 'text',
+						chatInfo: aiResponse.response,
+						time: aiResponse.timestamp,
+						isAIMessage: true,
+					};
+					// Send AI response as a regular chat event
+					room.newChatEvent(aiMessage);
+					
+					callback({ 
+						success: true, 
+						response: aiResponse.response,
+						messageId: aiMessage.id
+					});
+				} else {
+					callback({ error: aiResponse.error });
+				}
+
+			} catch (error) {
+				console.error('AI Chat Request Error:', error);
+				callback({ error: 'Failed to process AI request' });
+			}
+		});
+
+		socket.on('ai_summarize_conversation', async ({ roomId }, callback) => {
+			try {
+				if (!roomId) throw "RoomId is required";
+
+				const room = roomList.get(roomId);
+				if (!room) throw "Room not found";
+
+				// Get chat history for summarization
+				const chatHistory = await room.getRecentChatHistory(50);
+
+				const summary = await aiHelper.summarizeConversation(chatHistory);
+				callback(summary);
+
+			} catch (error) {
+				console.error('AI Summarize Error:', error);
+				callback({ error: 'Failed to generate summary' });
+			}
+		});
+
+		socket.on('ai_analyze_sentiment', async ({ message }, callback) => {
+			try {
+				if (!message) throw "Message is required";
+
+				const sentiment = await aiHelper.analyzeSentiment(message);
+				callback(sentiment);
+
+			} catch (error) {
+				console.error('AI Sentiment Error:', error);
+				callback({ error: 'Failed to analyze sentiment' });
+			}
+		});
+
+		socket.on('ai_smart_replies', async ({ message, roomId }, callback) => {
+			try {
+				if (!message) throw "Message is required";
+
+				const room = roomList.get(roomId);
+				let chatHistory = [];
+				
+				if (room) {
+					chatHistory = await room.getRecentChatHistory(5);
+				}
+
+				const smartReplies = await aiHelper.generateSmartReplies(message, chatHistory);
+				callback(smartReplies);
+
+			} catch (error) {
+				console.error('AI Smart Replies Error:', error);
+				callback({ error: 'Failed to generate smart replies' });
+			}
+		});
 
 	});
 }
