@@ -19,7 +19,9 @@ module.exports = {
 						name: user.name,
 						email: user.email,
 						photo_url: `https://ui-avatars.com/api/?name=${user.name.replaceAll(" ", "")}&length=1`,
-						created_at: new Date(),
+						created_at: config.firebase.admin.firestore.FieldValue.serverTimestamp(),
+						is_online: false,
+						last_seen: config.firebase.admin.firestore.FieldValue.serverTimestamp(),
 						friend_list: [],
 						sent_friend_requests: [],
 						received_friend_requests: [],
@@ -119,12 +121,18 @@ module.exports = {
 			return accumulator;
 		}, Promise.resolve([]));
 
+		const lastSeenMs = userData.last_seen && typeof userData.last_seen.toMillis === 'function'
+			? userData.last_seen.toMillis()
+			: (typeof userData.last_seen === 'number' ? userData.last_seen : null);
+
 		return {
 			success: "Fetched user details",
 			user: {
 				email: userData.email,
 				name: userData.name,
 				photo_url: userData.photo_url,
+				is_online: userData.is_online || false,
+				last_seen: lastSeenMs,
 				received_friend_requests: recFrndReqData,
 				sent_friend_requests: sentFrndReqData,
 				friend_list: frndListData,
@@ -141,11 +149,17 @@ module.exports = {
 
 		const userData = snapshot.data();
 
+		const lastSeenMs = userData.last_seen && typeof userData.last_seen.toMillis === 'function'
+			? userData.last_seen.toMillis()
+			: (typeof userData.last_seen === 'number' ? userData.last_seen : null);
+
 		return {
 			email: userData.email,
 			name: userData.name,
 			photo_url: userData.photo_url,
-			uid: userData.uid
+			uid: userData.uid,
+			is_online: userData.is_online || false,
+			last_seen: lastSeenMs
 		}
 	},
 
@@ -464,5 +478,130 @@ module.exports = {
 
 		await batch.commit();
 		return { success: "Group deleted", roomId };
+	},
+
+	// SCHEDULED MESSAGES
+	createScheduledMessage: async function (scheduledMessage) {
+		if (!scheduledMessage.userUid || !scheduledMessage.roomId || !scheduledMessage.message || !scheduledMessage.scheduledTime) {
+			throw "Required fields: userUid, roomId, message, scheduledTime";
+		}
+
+		const scheduledMessageId = require('uuid').v4();
+		const scheduledMessageData = {
+			id: scheduledMessageId,
+			userUid: scheduledMessage.userUid,
+			userName: scheduledMessage.userName,
+			userPhoto: scheduledMessage.userPhoto,
+			roomId: scheduledMessage.roomId,
+			message: scheduledMessage.message,
+			messageType: scheduledMessage.messageType || 'text',
+			fileName: scheduledMessage.fileName || '',
+			scheduledTime: new Date(scheduledMessage.scheduledTime),
+			createdAt: new Date(),
+			status: 'pending', // pending, sent, cancelled
+			recurring: scheduledMessage.recurring || false,
+			recurringPattern: scheduledMessage.recurringPattern || null, // daily, weekly, monthly
+			timezone: scheduledMessage.timezone || 'UTC'
+		};
+
+		await config.firebase.db.collection('scheduled_messages').doc(scheduledMessageId).set(scheduledMessageData);
+		return { success: "Scheduled message created", scheduledMessageId, scheduledMessage: scheduledMessageData };
+	},
+
+	getScheduledMessages: async function (userUid, roomId = null) {
+		if (!userUid) throw "userUid is required";
+
+		// Use a simpler query to avoid compound index issues
+		let query = config.firebase.db.collection('scheduled_messages')
+			.where('userUid', '==', userUid)
+			.where('status', '==', 'pending');
+
+		const snapshot = await query.get();
+		let scheduledMessages = [];
+
+		snapshot.forEach(doc => {
+			const data = doc.data();
+			scheduledMessages.push({
+				id: data.id,
+				...data,
+				scheduledTime: data.scheduledTime.toDate(),
+				createdAt: data.createdAt.toDate()
+			});
+		});
+
+		// Filter by roomId in memory if specified
+		if (roomId) {
+			scheduledMessages = scheduledMessages.filter(msg => msg.roomId === roomId);
+		}
+
+		// Sort by scheduledTime in memory
+		scheduledMessages.sort((a, b) => a.scheduledTime - b.scheduledTime);
+
+		return { success: "Scheduled messages fetched", scheduledMessages };
+	},
+
+	updateScheduledMessage: async function (scheduledMessageId, updates) {
+		if (!scheduledMessageId) throw "scheduledMessageId is required";
+
+		const scheduledMessageRef = config.firebase.db.collection('scheduled_messages').doc(scheduledMessageId);
+		const scheduledMessageSnap = await scheduledMessageRef.get();
+
+		if (!scheduledMessageSnap.exists) throw "Scheduled message not found";
+
+		// Convert scheduledTime to Date if it's being updated
+		if (updates.scheduledTime) {
+			updates.scheduledTime = new Date(updates.scheduledTime);
+		}
+
+		await scheduledMessageRef.update(updates);
+		return { success: "Scheduled message updated", scheduledMessageId };
+	},
+
+	deleteScheduledMessage: async function (scheduledMessageId, userUid) {
+		if (!scheduledMessageId || !userUid) throw "scheduledMessageId and userUid are required";
+
+		const scheduledMessageRef = config.firebase.db.collection('scheduled_messages').doc(scheduledMessageId);
+		const scheduledMessageSnap = await scheduledMessageRef.get();
+
+		if (!scheduledMessageSnap.exists) throw "Scheduled message not found";
+
+		const scheduledMessageData = scheduledMessageSnap.data();
+		if (scheduledMessageData.userUid !== userUid) throw "Unauthorized to delete this scheduled message";
+
+		await scheduledMessageRef.delete();
+		return { success: "Scheduled message deleted", scheduledMessageId };
+	},
+
+	getPendingScheduledMessages: async function () {
+		const now = new Date();
+		const snapshot = await config.firebase.db.collection('scheduled_messages')
+			.where('status', '==', 'pending')
+			.where('scheduledTime', '<=', now)
+			.get();
+
+		const pendingMessages = [];
+		snapshot.forEach(doc => {
+			const data = doc.data();
+			pendingMessages.push({
+				id: data.id,
+				...data,
+				scheduledTime: data.scheduledTime.toDate(),
+				createdAt: data.createdAt.toDate()
+			});
+		});
+
+		return pendingMessages;
+	},
+
+	markScheduledMessageAsSent: async function (scheduledMessageId) {
+		if (!scheduledMessageId) throw "scheduledMessageId is required";
+
+		const scheduledMessageRef = config.firebase.db.collection('scheduled_messages').doc(scheduledMessageId);
+		await scheduledMessageRef.update({
+			status: 'sent',
+			sentAt: new Date()
+		});
+
+		return { success: "Scheduled message marked as sent", scheduledMessageId };
 	}
 }
