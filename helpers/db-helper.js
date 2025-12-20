@@ -433,18 +433,23 @@ module.exports = {
 		return { success: "Member removed", removed: memberUid, roomId };
 	},
 
-	updateGroupInfo: async function (roomId, actorUid, { name, photoUrl }) {
+	updateGroupInfo: async function (roomId, actorUid, updates) {
 		if (!roomId) throw "roomId not found";
 		if (!actorUid) throw "actorUid not found";
 
-		const updates = {};
-		if (name) updates.name = name;
-		if (photoUrl) updates.photo_url = photoUrl;
-		if (Object.keys(updates).length === 0) return { success: "No updates", roomId };
+		// Filter out undefined values
+		const filteredUpdates = {};
+		if (updates.name !== undefined) filteredUpdates.name = updates.name;
+		if (updates.photoUrl !== undefined) filteredUpdates.photo_url = updates.photoUrl;
+		if (updates.photo_url !== undefined) filteredUpdates.photo_url = updates.photo_url;
+		if (updates.aiDisabled !== undefined) filteredUpdates.ai_disabled = updates.aiDisabled;
+		if (updates.ai_disabled !== undefined) filteredUpdates.ai_disabled = updates.ai_disabled;
+		
+		if (Object.keys(filteredUpdates).length === 0) return { success: "No updates", roomId };
 
 		const roomRef = config.firebase.db.collection('rooms').doc(roomId);
-		await roomRef.update(updates);
-		return { success: "Group updated", roomId, updates };
+		await roomRef.update(filteredUpdates);
+		return { success: "Group updated", roomId, updates: filteredUpdates };
 	},
 
 	deleteGroup: async function (roomId, actorUid) {

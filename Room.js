@@ -91,7 +91,6 @@ module.exports = class Room {
 			})
 		}
 
-		console.log('chatEvent', chatEvent)
 		this.io.to(this.roomId).emit('chat_event_server_to_client', chatEvent)
 
 		return { success: `Successfully sent chat msg to roomId: ${this.roomId}` };

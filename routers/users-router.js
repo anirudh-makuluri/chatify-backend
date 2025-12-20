@@ -189,13 +189,17 @@ router.delete('/users/:uid/groups/:roomId/members/:memberUid', async (req, res) 
 	}
 });
 
-// Update group info (name/photo)
+// Update group info (name/photo/ai settings)
 router.patch('/users/:uid/groups/:roomId', async (req, res) => {
 	try {
 		const actorUid = req.params.uid;
 		const roomId = req.params.roomId;
-		const { name, photoUrl } = req.body || {};
-		const response = await dbHelper.updateGroupInfo(roomId, actorUid, { name, photoUrl });
+		const { name, photoUrl, aiDisabled } = req.body || {};
+		const updates = {};
+		if (name !== undefined) updates.name = name;
+		if (photoUrl !== undefined) updates.photo_url = photoUrl;
+		if (aiDisabled !== undefined) updates.ai_disabled = aiDisabled;
+		const response = await dbHelper.updateGroupInfo(roomId, actorUid, updates);
 		res.send(response);
 	} catch (error) {
 		res.status(400).send({ error });
@@ -211,6 +215,40 @@ router.delete('/users/:uid/groups/:roomId', async (req, res) => {
 		res.send(response);
 	} catch (error) {
 		res.status(400).send({ error });
+	}
+});
+
+// Toggle AI for any room (enable/disable)
+router.patch('/users/:uid/rooms/:roomId/ai', async (req, res) => {
+	try {
+		const actorUid = req.params.uid;
+		const roomId = req.params.roomId;
+		const { aiDisabled } = req.body || {};
+
+		// Verify user is a member of the room
+		const roomRef = config.firebase.db.collection('rooms').doc(roomId);
+		const roomSnap = await roomRef.get();
+		if (!roomSnap.exists) {
+			return res.status(404).send({ error: 'Room not found' });
+		}
+
+		const roomData = roomSnap.data();
+		if (!roomData.members || !roomData.members.includes(actorUid)) {
+			return res.status(403).send({ error: 'User is not a member of this room' });
+		}
+
+		// Update AI setting
+		await roomRef.update({ ai_disabled: aiDisabled === true });
+
+		res.send({ 
+			success: true, 
+			message: `AI ${aiDisabled ? 'disabled' : 'enabled'} for room`,
+			roomId,
+			aiDisabled: aiDisabled === true
+		});
+	} catch (error) {
+		console.error('Toggle AI Error:', error);
+		res.status(500).send({ error: error.message || 'Failed to toggle AI' });
 	}
 });
 
