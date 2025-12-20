@@ -1,4 +1,5 @@
 const { GoogleGenAI } = require('@google/genai')
+const zepHelper = require('./zep-helper');
 
 const ai = new GoogleGenAI({});
 
@@ -18,15 +19,49 @@ module.exports = {
 	},
 
 	// AI Chat Assistant Functions
-	generateChatResponse: async function(message, chatHistory = [], roomContext = {}) {
+	generateChatResponse: async function(message, roomContext = {}, userId = null, threadId = null) {
 		try {
-			// Build context from chat history
-			const contextMessages = chatHistory.slice(-10).map(msg => ({
-				role: msg.userUid === 'ai-assistant' ? 'assistant' : 'user',
-				content: msg.chatInfo || msg.content || ''
-			}));
+			let zepContext = '';
+			let zepSummary = null;
+			let zepFacts = [];
+			
+			if (userId) {
+				const zepThreadId = threadId || `user-${userId}`;
+				
+				await zepHelper.createThread(userId, zepThreadId, {
+					roomId: roomContext.roomId || '',
+					roomName: roomContext.roomName || '',
+					isGroup: roomContext.isGroup || false
+				});
 
-			// Create system prompt for AI personality
+
+				await zepHelper.addMessage(zepThreadId, 'user', message, {
+					roomId: roomContext.roomId || '',
+					timestamp: new Date().toISOString()
+				}, 'User');
+
+				const contextResult = await zepHelper.getUserContext(zepThreadId);
+				if (contextResult.success) {
+					zepContext = contextResult.context || '';
+					zepSummary = contextResult.summary;
+					zepFacts = contextResult.facts || [];
+				}
+			}
+
+			let zepContextString = '';
+			if (zepContext) {
+				zepContextString += `\n\nUser's Memory Context (includes relevant past conversations):\n${zepContext}`;
+			}
+			if (zepSummary) {
+				zepContextString += `\n\nPrevious conversation summary: ${zepSummary}`;
+			}
+			if (zepFacts.length > 0) {
+				zepContextString += `\n\nKnown facts about the user:\n${zepFacts.map(fact => {
+					const factText = typeof fact === 'string' ? fact : (fact.fact || fact.content || JSON.stringify(fact));
+					return `- ${factText}`;
+				}).join('\n')}`;
+			}
+
 			const systemPrompt = `You are Chatify AI, a helpful and friendly AI assistant integrated into a chat application. 
 			
 			Personality:
@@ -35,23 +70,26 @@ module.exports = {
 			- Be concise but informative
 			- Show interest in users' conversations
 			- Offer helpful suggestions when appropriate
+			- Remember past conversations and reference them naturally when relevant
 			
 			Context:
 			- Room type: ${roomContext.isGroup ? 'Group chat' : 'Private chat'}
 			- Room name: ${roomContext.roomName || 'Chat'}
-			- Number of members: ${roomContext.memberCount || 1}
+			- Number of members: ${roomContext.memberCount || 1}${zepContextString}
 			
 			Guidelines:
 			- Keep responses under 200 words
 			- Be contextually relevant to the conversation
 			- Don't repeat information unnecessarily
 			- Ask follow-up questions when appropriate
-			- Be supportive and encouraging`;
+			- Be supportive and encouraging
+			- Reference past conversations naturally when relevant
+			- The memory context above already includes relevant past conversations, so use that information`;
 
-			const prompt = `${systemPrompt}\n\nRecent conversation:\n${contextMessages.map(msg => `${msg.role}: ${msg.content}`).join('\n')}\n\nUser: ${message}\n\nAI:`;
+			const prompt = `${systemPrompt}\n\nUser: ${message}\n\nAI:`;
 
 			const response = await ai.models.generateContent({
-				model: 'gemini-2.0-flash',
+				model: 'gemini-2.5-flash',
 				contents: prompt,
 				config: {
 					thinkingConfig: {
@@ -62,9 +100,19 @@ module.exports = {
 				}
 			});
 
+			const aiResponse = response.text;
+
+			if (userId) {
+				const zepThreadId = threadId || `user-${userId}`;
+				await zepHelper.addMessage(zepThreadId, 'assistant', aiResponse, {
+					roomId: roomContext.roomId || '',
+					timestamp: new Date().toISOString()
+				}, 'Chatify AI');
+			}
+
 			return {
 				success: true,
-				response: response.text,
+				response: aiResponse,
 				timestamp: new Date()
 			};
 

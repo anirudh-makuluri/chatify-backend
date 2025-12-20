@@ -13,6 +13,7 @@ const usersRouter = require('./routers/users-router');
 const scheduledMessagesRouter = require('./routers/scheduled-messages-router');
 const dbHelper = require('./helpers/db-helper');
 const aiHelper = require('./helpers/ai-helper')
+const zepHelper = require('./helpers/zep-helper');
 const Room = require('./Room');
 const SchedulerService = require('./helpers/scheduler-helper');
 
@@ -83,6 +84,15 @@ schedulerService.start();
 
 initIO();
 
+function getRoomThreadId(roomId, roomData, userUid) {
+	const members = roomData?.members || [];
+	const humanMembers = members.filter(uid => uid !== 'ai-assistant');
+	if (humanMembers.length >= 2) {
+		return `room-${roomId}`;
+	}
+	return `room-${userUid}`;
+}
+
 
 
 function initIO() {
@@ -142,7 +152,7 @@ function initIO() {
 			const userData = userSnap.exists ? userSnap.data() : {};
 			socket.session.friendUids = userData.friend_list || [];
 
-			// notify online friends about this user's presence
+
 			for (const friendUid of socket.session.friendUids) {
 				const friendSession = sessionStore.get(friendUid);
 				if (friendSession) {
@@ -168,8 +178,6 @@ function initIO() {
 			socket.session.roomIds.push(roomId);
 			console.log(`user with id-${socket.id} joined room - ${roomId}`);
 
-			if (roomList.has(roomId)) return;
-
 			const roomRef = admin.firestore().collection('rooms').doc(roomId);
 			const roomSnap = await roomRef.get();
 			if (roomSnap == null || !roomSnap.exists) {
@@ -182,7 +190,27 @@ function initIO() {
 			const roomName = roomData.name || '';
 			const photoUrl = roomData.photo_url || '';
 
-			roomList.set(roomId, new Room(roomId, io, roomRef, isGroup, members, roomName, photoUrl));
+			if (!roomList.has(roomId)) {
+				roomList.set(roomId, new Room(roomId, io, roomRef, isGroup, members, roomName, photoUrl));
+			}
+
+			// Get or create Zep thread for this room (reuses existing thread if it exists)
+			try {
+				const zepThreadId = getRoomThreadId(roomId, roomData, socket.uid);
+				const threadResult = await zepHelper.createThread(socket.uid, zepThreadId, {
+					roomId: roomId,
+					roomName: roomName,
+					isGroup: isGroup
+				});
+				
+				if (threadResult.success && threadResult.isNew) {
+					console.log(`Created new Zep thread: ${zepThreadId}`);
+				} else if (threadResult.success && !threadResult.isNew) {
+					console.log(`Reusing existing Zep thread: ${zepThreadId}`);
+				}
+			} catch (error) {
+				console.error('Failed to get/create Zep thread for room:', error);
+			}
 		});
 
 
@@ -204,23 +232,30 @@ function initIO() {
 			const room = roomList.get(data.roomId);
 			await room.newChatEvent(data);
 
-			// Check if this is an AI assistant room and auto-respond
 			if (data.roomId.startsWith('ai-assistant-') && data.userUid !== 'ai-assistant') {
-				// This is a user message in an AI room, generate AI response
 				try {
-					// Get recent chat history for context
-					const chatHistory = await room.getRecentChatHistory(10);
+					// Check if AI is disabled in this room
+					const roomRef = config.firebase.db.collection('rooms').doc(data.roomId);
+					const roomSnap = await roomRef.get();
+					const roomData = roomSnap.exists ? roomSnap.data() : {};
+
 					const roomContext = {
 						isGroup: room.isGroup,
 						roomName: room.roomName,
-						memberCount: room.members.length
+						memberCount: room.members.length,
+						roomId: data.roomId
 					};
 
-					// Generate AI response
-					const aiResponse = await aiHelper.generateChatResponse(data.chatInfo, chatHistory, roomContext);
+					const zepThreadId = getRoomThreadId(data.roomId, roomData, data.userUid);
+
+					const aiResponse = await aiHelper.generateChatResponse(
+						data.chatInfo,
+						roomContext,
+						data.userUid,
+						zepThreadId
+					);
 
 					if (aiResponse.success) {
-						// Create AI message object
 						const aiMessage = {
 							id: require('uuid').v4(),
 							roomId: data.roomId,
@@ -380,68 +415,31 @@ function initIO() {
 			}
 		})
 
-		// AI Assistant Events
-		socket.on('ai_chat_request', async ({ message, roomId }, callback) => {
-			try {
-				if (!message || !roomId) throw "Message and roomId are required";
-
-				const room = roomList.get(roomId);
-				if (!room) throw "Room not found";
-
-				// Get recent chat history for context
-				const chatHistory = await room.getRecentChatHistory(10);
-				const roomContext = {
-					isGroup: room.isGroup,
-					roomName: room.roomName,
-					memberCount: room.members.length
-				};
-
-				// Generate AI response
-				const aiResponse = await aiHelper.generateChatResponse(message, chatHistory, roomContext);
-
-				if (aiResponse.success) {
-					// Create AI message object
-					const aiMessage = {
-						id: require('uuid').v4(),
-						roomId: roomId,
-						userUid: 'ai-assistant',
-						userName: 'Chatify AI',
-						userPhoto: 'https://ui-avatars.com/api/?name=AI&background=6366f1&color=ffffff',
-						type: 'text',
-						chatInfo: aiResponse.response,
-						time: aiResponse.timestamp,
-						isAIMessage: true,
-					};
-					// Send AI response as a regular chat event
-					room.newChatEvent(aiMessage);
-					
-					callback({ 
-						success: true, 
-						response: aiResponse.response,
-						messageId: aiMessage.id
-					});
-				} else {
-					callback({ error: aiResponse.error });
-				}
-
-			} catch (error) {
-				console.error('AI Chat Request Error:', error);
-				callback({ error: 'Failed to process AI request' });
-			}
-		});
-
 		socket.on('ai_summarize_conversation', async ({ roomId }, callback) => {
 			try {
 				if (!roomId) throw "RoomId is required";
 
-				const room = roomList.get(roomId);
-				if (!room) throw "Room not found";
+				const roomRef = config.firebase.db.collection('rooms').doc(roomId);
+				const roomSnap = await roomRef.get();
+				if (!roomSnap.exists) throw "Room not found";
+				const roomData = roomSnap.data();
 
-				// Get chat history for summarization
-				const chatHistory = await room.getRecentChatHistory(50);
+				const zepThreadId = getRoomThreadId(roomId, roomData, socket.uid);
 
-				const summary = await aiHelper.summarizeConversation(chatHistory);
-				callback(summary);
+				const summaryResult = await zepHelper.getSessionSummary(zepThreadId);
+				
+				if (summaryResult.success && summaryResult.summary) {
+					callback({
+						success: true,
+						summary: summaryResult.summary,
+						timestamp: new Date()
+					});
+				} else {
+					callback({ 
+						success: false, 
+						error: 'No conversation to summarize yet' 
+					});
+				}
 
 			} catch (error) {
 				console.error('AI Summarize Error:', error);
@@ -466,14 +464,7 @@ function initIO() {
 			try {
 				if (!message) throw "Message is required";
 
-				const room = roomList.get(roomId);
-				let chatHistory = [];
-				
-				if (room) {
-					chatHistory = await room.getRecentChatHistory(5);
-				}
-
-				const smartReplies = await aiHelper.generateSmartReplies(message, chatHistory);
+				const smartReplies = await aiHelper.generateSmartReplies(message, []);
 				callback(smartReplies);
 
 			} catch (error) {

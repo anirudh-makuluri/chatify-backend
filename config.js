@@ -21,6 +21,9 @@ module.exports = {
 	},
 	chatDocSize: 50,
 	allowedOrigins: ['http://localhost:3000', 'chatify-a.vercel.app', 'http://localhost:8192', 'http://localhost:8081', 'exp://192.168.0.102:8081', 'http://192.168.0.102:8081'],
+	zep: {
+		apiKey: process.env.ZEP_API_KEY || ''
+	},
 	storageBucketCorsConfiguration: {
 		"origin": this.allowedOrigins,
 		"method": ["GET"],
