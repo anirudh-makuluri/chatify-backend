@@ -16,6 +16,7 @@ const aiHelper = require('./helpers/ai-helper')
 const zepHelper = require('./helpers/zep-helper');
 const Room = require('./Room');
 const SchedulerService = require('./helpers/scheduler-helper');
+const searchRouter = require('./routers/search-router');
 
 const app = express();
 const httpServer = createServer(app);
@@ -56,6 +57,7 @@ app.use(fileUpload());
 app.use(sessionRouter);
 app.use(usersRouter);
 app.use('/api/scheduled-messages', scheduledMessagesRouter);
+app.use('/api', searchRouter);
 
 
 admin.initializeApp({

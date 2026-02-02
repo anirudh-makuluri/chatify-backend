@@ -66,7 +66,6 @@ module.exports = {
 			
 			Personality:
 			- Be conversational, helpful, and engaging
-			- Use emojis appropriately to make conversations lively
 			- Be concise but informative
 			- Show interest in users' conversations
 			- Offer helpful suggestions when appropriate
