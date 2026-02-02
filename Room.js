@@ -1,5 +1,6 @@
 const config = require("./config");
 const utils = require("./utils");
+const vectorEmbedder = require("./helpers/vector-embedder");
 
 module.exports = class Room {
 	constructor(roomId, io, roomRef, isGroup, members, roomName, photoUrl) {
@@ -62,6 +63,13 @@ module.exports = class Room {
 			isMsgSaved: chatEvent.isMsgSaved ?? false,
 			isAIMessage: chatEvent.isAIMessage ?? false,
 			time: chatEvent.time
+		};
+
+		if (chatEvent.type === 'text' && typeof chatEvent.chatInfo === 'string' && chatEvent.userUid !== 'ai-assistant') {
+			const embedding = await vectorEmbedder.getEmbedding(chatEvent.chatInfo);
+			if (embedding && embedding.length > 0) {
+				chatObject.vector_embedding = embedding;
+			}
 		}
 
 		if(this.currentChatDocMsgCnt >= config.chatDocSize || this.currentChatDocRef == null) {
