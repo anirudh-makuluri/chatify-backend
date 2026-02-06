@@ -19,15 +19,16 @@ module.exports = {
 	},
 
 	// AI Chat Assistant Functions
-	generateChatResponse: async function(message, roomContext = {}, userId = null, threadId = null) {
+	generateChatResponse: async function(message, roomContext = {}, userId = null, threadId = null, isPrivateBubble = false) {
 		try {
 			let zepContext = '';
 			let zepSummary = null;
 			let zepFacts = [];
-			
-			if (userId) {
+
+			// Skip Zep memory for private bubbles
+			if (userId && !isPrivateBubble) {
 				const zepThreadId = threadId || `user-${userId}`;
-				
+
 				await zepHelper.createThread(userId, zepThreadId, {
 					roomId: roomContext.roomId || '',
 					roomName: roomContext.roomName || '',
@@ -101,7 +102,8 @@ module.exports = {
 
 			const aiResponse = response.text;
 
-			if (userId) {
+			// Skip Zep memory for private bubbles
+			if (userId && !isPrivateBubble) {
 				const zepThreadId = threadId || `user-${userId}`;
 				await zepHelper.addMessage(zepThreadId, 'assistant', aiResponse, {
 					roomId: roomContext.roomId || '',
@@ -132,7 +134,7 @@ module.exports = {
 			}
 
 			const conversationText = chatHistory
-				.filter(msg => msg.userUid !== 'ai-assistant')
+				.filter(msg => msg.userUid !== 'ai-assistant' && !msg.aiBlind && !msg.isPrivateBubble)
 				.map(msg => `${msg.userName}: ${msg.chatInfo}`)
 				.join('\n');
 

@@ -57,6 +57,8 @@ router.get('/search', requireSession, async (req, res) => {
 			if (!chatSnap.exists) continue;
 			const chatHistory = chatSnap.data().chat_history || [];
 			for (const msg of chatHistory) {
+				// Skip private/AI-blind messages from search
+				if (msg.aiBlind || msg.isPrivateBubble) continue;
 				if (msg.type === 'text' && Array.isArray(msg.vector_embedding) && msg.vector_embedding.length > 0) {
 					allMessages.push({ ...msg, _chatDocId: docId });
 				}

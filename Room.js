@@ -50,6 +50,15 @@ module.exports = class Room {
 		chatEvent.chatDocId = this.currentChatDocRef?.id;
 		chatEvent.time = new Date();
 
+		// Private Bubble encryption support
+		const isPrivateBubble = chatEvent.isPrivateBubble || false;
+		const isAIAssistantRoom = this.roomId.startsWith('ai-assistant-');
+
+		// Private bubbles: aiBlind=true, searchable=false
+		// Normal messages: aiBlind=false, searchable=true (if text and not AI message)
+		const aiBlind = isPrivateBubble || isAIAssistantRoom;
+		const searchable = !aiBlind && chatEvent.type === 'text' && chatEvent.userUid !== 'ai-assistant';
+
 		const chatObject = {
 			id: chatEvent.id,
 			chatDocId: chatEvent.chatDocId,
@@ -62,10 +71,19 @@ module.exports = class Room {
 			isMsgEdited: chatEvent.isMsgEdited ?? false,
 			isMsgSaved: chatEvent.isMsgSaved ?? false,
 			isAIMessage: chatEvent.isAIMessage ?? false,
+			isPrivateBubble: isPrivateBubble,
+			aiBlind: aiBlind,
+			searchable: searchable,
 			time: chatEvent.time
 		};
 
-		if (chatEvent.type === 'text' && typeof chatEvent.chatInfo === 'string' && chatEvent.userUid !== 'ai-assistant') {
+		// Add encrypted payload if present (for private bubbles)
+		if (chatEvent.encrypted) {
+			chatObject.encrypted = chatEvent.encrypted;
+		}
+
+		// Only generate embeddings for searchable messages
+		if (searchable && typeof chatEvent.chatInfo === 'string') {
 			const embedding = await vectorEmbedder.getEmbedding(chatEvent.chatInfo);
 			if (embedding && embedding.length > 0) {
 				chatObject.vector_embedding = embedding;
@@ -256,7 +274,9 @@ module.exports = class Room {
 				
 				if (chatDocSnap.exists) {
 					const chatHistory = chatDocSnap.data().chat_history || [];
-					allMessages.push(...chatHistory);
+					// Exclude private bubbles from AI context
+					const publicMessages = chatHistory.filter(msg => !msg.aiBlind && !msg.isPrivateBubble);
+					allMessages.push(...publicMessages);
 				}
 			}
 			

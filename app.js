@@ -254,7 +254,8 @@ function initIO() {
 						data.chatInfo,
 						roomContext,
 						data.userUid,
-						zepThreadId
+						zepThreadId,
+						data.isPrivateBubble || false
 					);
 
 					if (aiResponse.success) {
