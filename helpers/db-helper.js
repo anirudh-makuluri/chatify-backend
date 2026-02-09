@@ -2,6 +2,54 @@ const config = require("../config")
 const { genRoomId } = require("../utils")
 
 module.exports = {
+	getIdentityKeysForUsers: async function(userIds) {
+		const keys = {};
+		if (!Array.isArray(userIds) || userIds.length === 0) return keys;
+
+		await Promise.all(userIds.map(async (uid) => {
+			const devicesSnap = await config.firebase.db.collection('auth_users')
+				.doc(uid)
+				.collection('identity_keys')
+				.get();
+
+			if (devicesSnap.empty) return;
+
+			const devices = {};
+			devicesSnap.forEach((doc) => {
+				const data = doc.data() || {};
+				if (data.deviceId && data.publicKey) {
+					devices[data.deviceId] = data.publicKey;
+				}
+			});
+
+			if (Object.keys(devices).length > 0) {
+				keys[uid] = devices;
+			}
+		}));
+
+		return keys;
+	},
+
+	getRoomKeysForMembers: async function(roomId, memberUids) {
+		const keys = {};
+		if (!roomId || !Array.isArray(memberUids) || memberUids.length === 0) return keys;
+
+		const membersSet = new Set(memberUids);
+		const keysSnap = await config.firebase.db.collection('rooms')
+			.doc(roomId)
+			.collection('keys')
+			.get();
+
+		keysSnap.forEach((doc) => {
+			const data = doc.data() || {};
+			if (!data.userId || !data.deviceId || !data.publicKey) return;
+			if (!membersSet.has(data.userId)) return;
+			if (!keys[data.userId]) keys[data.userId] = {};
+			keys[data.userId][data.deviceId] = data.publicKey;
+		});
+
+		return keys;
+	},
 	createUser: async function (user) {
 		if (!user.uid || !user.email) {
 			return { error: "uid and email are required" }
@@ -74,10 +122,12 @@ module.exports = {
 			}
 
 			if(roomData.is_ai_room) {
+				const memberPublicKeys = await this.getIdentityKeysForUsers([uid]);
 				accumulator.push({
 					id: roomId,
 					...roomData,
 					messages: messages,
+					memberPublicKeys,
 					membersData: [
 						{
 							uid: 'ai-assistant',
@@ -96,6 +146,10 @@ module.exports = {
 
 			const membersData = await Promise.all(membersDataPromises);
 
+			const memberPublicKeys = roomData.is_group
+				? await this.getRoomKeysForMembers(roomId, roomData.members)
+				: await this.getIdentityKeysForUsers(roomData.members);
+
 			if(roomData.is_group == false) {
 				const otherUserUid = roomData.members[0] == uid ? roomData.members[1] : roomData.members[0];
 
@@ -107,6 +161,7 @@ module.exports = {
 					messages: messages,
 					photo_url: reqData?.photo_url,
 					name: reqData?.name,
+					memberPublicKeys,
 					membersData
 				})
 			} else {
@@ -114,6 +169,7 @@ module.exports = {
 					id: roomId,
 					...roomData,
 					messages: messages,
+					memberPublicKeys,
 					membersData
 				})
 			}
@@ -359,6 +415,8 @@ module.exports = {
 			members: uniqueMembers,
 			is_group: true,
 			name,
+			created_by: creatorUid,
+			admins: [creatorUid],
 			photo_url: photoUrl || `https://ui-avatars.com/api/?name=${encodeURIComponent(name)}&background=0ea5e9&color=ffffff`,
 			created_at: new Date(),
 			chat_doc_ids: []

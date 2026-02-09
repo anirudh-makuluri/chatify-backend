@@ -50,6 +50,8 @@ module.exports = class Room {
 		chatEvent.chatDocId = this.currentChatDocRef?.id;
 		chatEvent.time = new Date();
 
+		const isEncrypted = chatEvent.isEncrypted ?? false;
+
 		const chatObject = {
 			id: chatEvent.id,
 			chatDocId: chatEvent.chatDocId,
@@ -61,11 +63,12 @@ module.exports = class Room {
 			userPhoto: chatEvent.userPhoto,
 			isMsgEdited: chatEvent.isMsgEdited ?? false,
 			isMsgSaved: chatEvent.isMsgSaved ?? false,
-			isAIMessage: chatEvent.isAIMessage ?? false,
-			time: chatEvent.time
+			time: chatEvent.time,
+			isEncrypted: isEncrypted,
+			encrypted: chatEvent.encrypted || '',
 		};
 
-		if (chatEvent.type === 'text' && typeof chatEvent.chatInfo === 'string' && chatEvent.userUid !== 'ai-assistant') {
+		if (!isEncrypted) {
 			const embedding = await vectorEmbedder.getEmbedding(chatEvent.chatInfo);
 			if (embedding && embedding.length > 0) {
 				chatObject.vector_embedding = embedding;

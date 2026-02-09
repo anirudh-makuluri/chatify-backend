@@ -11,6 +11,7 @@ const config = require('./config');
 const sessionRouter = require('./routers/session-router');
 const usersRouter = require('./routers/users-router');
 const scheduledMessagesRouter = require('./routers/scheduled-messages-router');
+const e2eeRouter = require('./routers/e2ee-router');
 const dbHelper = require('./helpers/db-helper');
 const aiHelper = require('./helpers/ai-helper')
 const zepHelper = require('./helpers/zep-helper');
@@ -56,6 +57,7 @@ app.use(cookieParser());
 app.use(fileUpload());
 app.use(sessionRouter);
 app.use(usersRouter);
+app.use(e2eeRouter);
 app.use('/api/scheduled-messages', scheduledMessagesRouter);
 app.use('/api', searchRouter);
 
@@ -178,7 +180,7 @@ function initIO() {
 		socket.on("join_room", async (roomId, callback) => {
 			socket.join(roomId);
 			socket.session.roomIds.push(roomId);
-			console.log(`user with id-${socket.id} joined room - ${roomId}`);
+			// console.log(`user with id-${socket.id} joined room - ${roomId}`);
 
 			const roomRef = admin.firestore().collection('rooms').doc(roomId);
 			const roomSnap = await roomRef.get();
@@ -205,11 +207,11 @@ function initIO() {
 					isGroup: isGroup
 				});
 				
-				if (threadResult.success && threadResult.isNew) {
-					console.log(`Created new Zep thread: ${zepThreadId}`);
-				} else if (threadResult.success && !threadResult.isNew) {
-					console.log(`Reusing existing Zep thread: ${zepThreadId}`);
-				}
+				// if (threadResult.success && threadResult.isNew) {
+				// 	console.log(`Created new Zep thread: ${zepThreadId}`);
+				// } else if (threadResult.success && !threadResult.isNew) {
+				// 	console.log(`Reusing existing Zep thread: ${zepThreadId}`);
+				// }
 			} catch (error) {
 				console.error('Failed to get/create Zep thread for room:', error);
 			}
