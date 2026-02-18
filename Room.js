@@ -1,6 +1,7 @@
 const config = require("./config");
 const utils = require("./utils");
 const vectorEmbedder = require("./helpers/vector-embedder");
+const logger = require("./logger");
 
 module.exports = class Room {
 	constructor(roomId, io, roomRef, isGroup, members, roomName, photoUrl) {
@@ -99,7 +100,9 @@ module.exports = class Room {
 				chat_history: config.firebase.admin.firestore.FieldValue.arrayUnion(chatObject)
 			}).then(() => {
 				this.currentChatDocMsgCnt++;
-			})
+			}).catch((error) => {
+				logger.error('Failed to update chat document:', error);
+			});
 		}
 
 		this.io.to(this.roomId).emit('chat_event_server_to_client', chatEvent)
@@ -114,7 +117,7 @@ module.exports = class Room {
 
 		const reqIdx = chatHistory.findIndex(msg => msg.id == id)
 
-		if(reqIdx == -1) throw "Required message not found";
+		if(reqIdx == -1) throw new Error("Required message not found");
 
 		chatHistory.splice(reqIdx, 1);
 
@@ -134,7 +137,7 @@ module.exports = class Room {
 
 		const reqIdx = chatHistory.findIndex(msg => msg.id == id)
 
-		if(reqIdx == -1) throw "Required message not found";
+		if(reqIdx == -1) throw new Error("Required message not found");
 
 		chatHistory[reqIdx].chatInfo = newText
 		chatHistory[reqIdx].isMsgEdited = true
@@ -158,7 +161,7 @@ module.exports = class Room {
 
 		const reqIdx = chatHistory.findIndex(msg => msg.id == id)
 
-		if(reqIdx == -1) throw "Required message not found";
+		if(reqIdx == -1) throw new Error("Required message not found");
 
 		const isMsgSaved = chatHistory[reqIdx].isMsgSaved || false;
 
@@ -203,7 +206,7 @@ module.exports = class Room {
 
 		const reqIdx = chatHistory.findIndex(msg => msg.id == id)
 
-		if(reqIdx == -1) throw "Required message not found";
+		if(reqIdx == -1) throw new Error("Required message not found");
 
 		const reactions = chatHistory[reqIdx].reactions || [];
 
@@ -268,7 +271,7 @@ module.exports = class Room {
 			return allMessages.slice(0, limit);
 			
 		} catch (error) {
-			console.error('Error getting recent chat history:', error);
+			// Error logging will be handled by the caller
 			return [];
 		}
 	}

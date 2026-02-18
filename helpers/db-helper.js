@@ -1,5 +1,6 @@
 const config = require("../config")
 const { genRoomId } = require("../utils")
+const logger = require("../logger")
 
 module.exports = {
 	getIdentityKeysForUsers: async function(userIds) {
@@ -220,7 +221,7 @@ module.exports = {
 	},
 
 	getSearchedUsers: async function (searchUser) {
-		console.log(`Searching with term: ${searchUser}`);
+		logger.debug(`Searching with term: ${searchUser}`);
 		if (!searchUser) {
 			throw { error: "searchUser not given" }
 		}

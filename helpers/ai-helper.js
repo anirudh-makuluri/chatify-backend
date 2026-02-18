@@ -1,5 +1,6 @@
 const { GoogleGenAI } = require('@google/genai')
 const zepHelper = require('./zep-helper');
+const logger = require('../logger');
 
 const ai = new GoogleGenAI({});
 
@@ -157,7 +158,7 @@ module.exports = {
 			};
 
 		} catch (error) {
-			console.error('AI Summary Error:', error);
+			logger.error('AI Summary Error:', error);
 			return {
 				success: false,
 				error: 'Unable to generate summary at this time'
@@ -191,7 +192,7 @@ module.exports = {
 			};
 
 		} catch (error) {
-			console.error('AI Sentiment Error:', error);
+			logger.error('AI Sentiment Error:', error);
 			return {
 				success: false,
 				sentiment: 'neutral'
@@ -229,7 +230,7 @@ module.exports = {
 			};
 
 		} catch (error) {
-			console.error('AI Smart Replies Error:', error);
+			logger.error('AI Smart Replies Error:', error);
 			return {
 				success: false,
 				replies: ['👍', 'Got it!', 'Thanks!']

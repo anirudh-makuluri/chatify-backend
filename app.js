@@ -5,6 +5,7 @@ const cookieParser = require('cookie-parser');
 const admin = require('firebase-admin');
 const cors = require('cors');
 const fileUpload = require('express-fileupload');
+const logger = require('./logger');
 
 const config = require('./config');
 
@@ -30,7 +31,7 @@ const io = new Server(httpServer, {
 });
 
 httpServer.listen(config.PORT, () => {
-	console.log(`Server is running on port ${config.PORT}`);
+	logger.info(`Server is running on port ${config.PORT}`);
 })
 
 app.use((req, res, next) => {
@@ -75,8 +76,8 @@ config.firebase.storageBucket = bucket;
 configureStorageBucketCors();
 async function configureStorageBucketCors() {
 	await config.firebase.storageBucket.setCorsConfiguration([config.storageBucketCorsConfiguration])
-	.then(() => console.log(`Bucket ${config.firebase.storageBucketName} is updated with the CORS config`))
-	.catch(e => console.log(e));
+	.then(() => logger.info(`Bucket ${config.firebase.storageBucketName} is updated with the CORS config`))
+	.catch(e => logger.error('Failed to configure storage bucket CORS:', e));
 }
 
 const sessionStore = new Map();
@@ -85,6 +86,45 @@ const schedulerService = new SchedulerService(io, roomList);
 
 // Start the scheduler service
 schedulerService.start();
+
+// Cleanup Maps periodically to prevent memory leaks
+// Clean up rooms that have no active connections every 30 minutes
+setInterval(() => {
+	const roomsToDelete = [];
+	for (const [roomId, room] of roomList.entries()) {
+		const roomSockets = io.sockets.adapter.rooms.get(roomId);
+		if (!roomSockets || roomSockets.size === 0) {
+			roomsToDelete.push(roomId);
+		}
+	}
+	
+	roomsToDelete.forEach(roomId => {
+		roomList.delete(roomId);
+		logger.debug(`Cleaned up inactive room: ${roomId}`);
+	});
+	
+	if (roomsToDelete.length > 0) {
+		logger.info(`Cleaned up ${roomsToDelete.length} inactive rooms`);
+	}
+	
+	// Clean up stale sessions (sessions without active socket connections)
+	const sessionsToDelete = [];
+	for (const [uid, session] of sessionStore.entries()) {
+		const socket = io.sockets.sockets.get(session.currentSocketId);
+		if (!socket || !socket.connected) {
+			sessionsToDelete.push(uid);
+		}
+	}
+	
+	sessionsToDelete.forEach(uid => {
+		sessionStore.delete(uid);
+		logger.debug(`Cleaned up stale session: ${uid}`);
+	});
+	
+	if (sessionsToDelete.length > 0) {
+		logger.info(`Cleaned up ${sessionsToDelete.length} stale sessions`);
+	}
+}, 30 * 60 * 1000); // Run every 30 minutes
 
 initIO();
 
@@ -104,7 +144,7 @@ function initIO() {
 		const cookies = {};
 		if (cookieString) {
 			cookieString.split(';').forEach(token => {
-				[key, value] = token.split('=');
+				const [key, value] = token.split('=');
 				if (key && value) {
 					cookies[key.trim()] = value.trim();
 				}
@@ -120,32 +160,32 @@ function initIO() {
 
 		const decodedClaims = await admin.auth().verifySessionCookie(sessionCookie, false)
 			.then(decodedClaims => decodedClaims).catch((err) => {
-				console.error(err);
+				logger.error('Session cookie verification error:', err);
 				return null;
 			})
 
 
-		console.log("socket.handshake.auth: ", socket.handshake.auth);
-		console.log("-----------------------------------------------");
+		logger.debug("Socket handshake auth received");
+		logger.debug("-----------------------------------------------");
 
         if (decodedClaims) {
 			socket.uid = decodedClaims.uid;
 			socket.email = decodedClaims.email;
 		} else {
-			console.log("Could not get valid sessionCookie, cannot create websocket");
+			logger.warn("Could not get valid sessionCookie, cannot create websocket");
 			return next(new Error("Could not get valid sessionCookie, cannot create websocket"));
 		}
 
 		const name = socket.handshake.auth.name;
 		if (!name) {
-			console.log("Invalid name");
+			logger.warn("Invalid name provided");
 			return next(new Error("invalid userName"));
 		}
 
         socket.session = { currentSocketId: socket.id, name: name, uid: socket.uid, roomIds: [] };
 		sessionStore.set(socket.uid, socket.session);
-		console.log(`Adding ${socket.uid} to sessionStore`);
-		console.log(sessionStore);
+		logger.info(`Adding ${socket.uid} to sessionStore`);
+		logger.debug(`SessionStore size: ${sessionStore.size}`);
         try {
             // set user online on successful auth
             const userRef = config.firebase.db.collection('auth_users').doc(socket.uid);
@@ -168,7 +208,7 @@ function initIO() {
 				}
 			}
         } catch (e) {
-            console.error('Failed to set user online:', e);
+            logger.error('Failed to set user online:', e);
         }
 		return next();
 	})
@@ -213,7 +253,7 @@ function initIO() {
 				// 	console.log(`Reusing existing Zep thread: ${zepThreadId}`);
 				// }
 			} catch (error) {
-				console.error('Failed to get/create Zep thread for room:', error);
+				logger.error('Failed to get/create Zep thread for room:', error);
 			}
 		});
 
@@ -276,7 +316,7 @@ function initIO() {
 						await room.newChatEvent(aiMessage);
 					}
 				} catch (error) {
-					console.error('Auto AI Response Error:', error);
+					logger.error('Auto AI Response Error:', error);
 					// Don't fail the original message if AI response fails
 				}
 			}
@@ -284,9 +324,9 @@ function initIO() {
 
 
 		socket.on('disconnect', async () => {
-			console.log("A client disconnected :", socket.uid);
+			logger.info("A client disconnected:", socket.uid);
 			const sessionId = socket.uid;
-			console.log(`Deleting ${socket.uid} from sessionStore`)
+			logger.debug(`Deleting ${socket.uid} from sessionStore`);
 			sessionStore.delete(sessionId);
 
             try {
@@ -308,7 +348,7 @@ function initIO() {
 					}
 				}
             } catch (e) {
-                console.error('Failed to set user offline:', e);
+                logger.error('Failed to set user offline:', e);
             }
 
 			const roomIds = socket.session.roomIds || [];
@@ -317,7 +357,7 @@ function initIO() {
 				const numUsersInRoom = usersInRoom ? usersInRoom.size : 0;
 				if (numUsersInRoom == 0) {
 					roomList.delete(roomId);
-					console.log(`Deleted ${roomId} from roomList`);
+					logger.debug(`Deleted ${roomId} from roomList`);
 				}
 			})
 		});
@@ -370,7 +410,7 @@ function initIO() {
 
 		socket.on('chat_reaction_client_to_server', async ({ reactionId, id, chatDocId, roomId, userUid, userName }, callback) => {
 			try {
-				if(!reactionId || !id || !chatDocId || !roomId || !userUid || !userName) throw "One or more information is missing"
+				if(!reactionId || !id || !chatDocId || !roomId || !userUid || !userName) throw new Error("One or more information is missing");
 				const room = roomList.get(roomId);
 				const response = await room.updateReaction({ reactionId, id, chatDocId, userUid, userName });
 
@@ -421,11 +461,11 @@ function initIO() {
 
 		socket.on('ai_summarize_conversation', async ({ roomId }, callback) => {
 			try {
-				if (!roomId) throw "RoomId is required";
+				if (!roomId) throw new Error("RoomId is required");
 
 				const roomRef = config.firebase.db.collection('rooms').doc(roomId);
 				const roomSnap = await roomRef.get();
-				if (!roomSnap.exists) throw "Room not found";
+				if (!roomSnap.exists) throw new Error("Room not found");
 				const roomData = roomSnap.data();
 
 				const zepThreadId = getRoomThreadId(roomId, roomData, socket.uid);
@@ -446,33 +486,33 @@ function initIO() {
 				}
 
 			} catch (error) {
-				console.error('AI Summarize Error:', error);
+				logger.error('AI Summarize Error:', error);
 				callback({ error: 'Failed to generate summary' });
 			}
 		});
 
 		socket.on('ai_analyze_sentiment', async ({ message }, callback) => {
 			try {
-				if (!message) throw "Message is required";
+				if (!message) throw new Error("Message is required");
 
 				const sentiment = await aiHelper.analyzeSentiment(message);
 				callback(sentiment);
 
 			} catch (error) {
-				console.error('AI Sentiment Error:', error);
+				logger.error('AI Sentiment Error:', error);
 				callback({ error: 'Failed to analyze sentiment' });
 			}
 		});
 
 		socket.on('ai_smart_replies', async ({ message, roomId }, callback) => {
 			try {
-				if (!message) throw "Message is required";
+				if (!message) throw new Error("Message is required");
 
 				const smartReplies = await aiHelper.generateSmartReplies(message, []);
 				callback(smartReplies);
 
 			} catch (error) {
-				console.error('AI Smart Replies Error:', error);
+				logger.error('AI Smart Replies Error:', error);
 				callback({ error: 'Failed to generate smart replies' });
 			}
 		});
@@ -481,17 +521,17 @@ function initIO() {
 		socket.on('schedule_message', async ({ scheduledMessage }, callback) => {
 			try {
 				if (!scheduledMessage.userUid || !scheduledMessage.roomId || !scheduledMessage.message || !scheduledMessage.scheduledTime) {
-					throw "Required fields: userUid, roomId, message, scheduledTime";
+					throw new Error("Required fields: userUid, roomId, message, scheduledTime");
 				}
 
 				// Verify user is authorized to schedule messages in this room
 				const roomRef = config.firebase.db.collection('rooms').doc(scheduledMessage.roomId);
 				const roomSnap = await roomRef.get();
-				if (!roomSnap.exists) throw "Room not found";
+				if (!roomSnap.exists) throw new Error("Room not found");
 				
 				const roomData = roomSnap.data();
 				if (!roomData.members.includes(scheduledMessage.userUid)) {
-					throw "User not authorized to schedule messages in this room";
+					throw new Error("User not authorized to schedule messages in this room");
 				}
 
 				// Get user data for the scheduled message
@@ -505,53 +545,53 @@ function initIO() {
 
 				callback(response);
 			} catch (error) {
-				console.error('Schedule Message Error:', error);
+				logger.error('Schedule Message Error:', error);
 				callback({ error: error.message || 'Failed to schedule message' });
 			}
 		});
 
 		socket.on('get_scheduled_messages', async ({ userUid, roomId }, callback) => {
 			try {
-				if (!userUid) throw "userUid is required";
+				if (!userUid) throw new Error("userUid is required");
 
 				const response = await dbHelper.getScheduledMessages(userUid, roomId);
 				callback(response);
 			} catch (error) {
-				console.error('Get Scheduled Messages Error:', error);
+				logger.error('Get Scheduled Messages Error:', error);
 				callback({ error: error.message || 'Failed to get scheduled messages' });
 			}
 		});
 
 		socket.on('update_scheduled_message', async ({ scheduledMessageId, updates, userUid }, callback) => {
 			try {
-				if (!scheduledMessageId || !userUid) throw "scheduledMessageId and userUid are required";
+				if (!scheduledMessageId || !userUid) throw new Error("scheduledMessageId and userUid are required");
 
 				// Verify ownership
 				const scheduledMessageRef = config.firebase.db.collection('scheduled_messages').doc(scheduledMessageId);
 				const scheduledMessageSnap = await scheduledMessageRef.get();
-				if (!scheduledMessageSnap.exists) throw "Scheduled message not found";
+				if (!scheduledMessageSnap.exists) throw new Error("Scheduled message not found");
 				
 				const scheduledMessageData = scheduledMessageSnap.data();
 				if (scheduledMessageData.userUid !== userUid) {
-					throw "Unauthorized to update this scheduled message";
+					throw new Error("Unauthorized to update this scheduled message");
 				}
 
 				const response = await dbHelper.updateScheduledMessage(scheduledMessageId, updates);
 				callback(response);
 			} catch (error) {
-				console.error('Update Scheduled Message Error:', error);
+				logger.error('Update Scheduled Message Error:', error);
 				callback({ error: error.message || 'Failed to update scheduled message' });
 			}
 		});
 
 		socket.on('delete_scheduled_message', async ({ scheduledMessageId, userUid }, callback) => {
 			try {
-				if (!scheduledMessageId || !userUid) throw "scheduledMessageId and userUid are required";
+				if (!scheduledMessageId || !userUid) throw new Error("scheduledMessageId and userUid are required");
 
 				const response = await dbHelper.deleteScheduledMessage(scheduledMessageId, userUid);
 				callback(response);
 			} catch (error) {
-				console.error('Delete Scheduled Message Error:', error);
+				logger.error('Delete Scheduled Message Error:', error);
 				callback({ error: error.message || 'Failed to delete scheduled message' });
 			}
 		});

@@ -3,6 +3,7 @@ const config = require('../config');
 const utils = require('../utils');
 const vectorEmbedder = require('../helpers/vector-embedder');
 const aiHelper = require('../helpers/ai-helper');
+const logger = require('../logger');
 
 const router = new Router();
 const MAX_SEARCH_RESULTS = 5;
@@ -93,7 +94,7 @@ router.get('/search', requireSession, async (req, res) => {
 
 		res.json({ success: true, results });
 	} catch (err) {
-		console.error('Search error:', err);
+		logger.error('Search error:', err);
 		res.status(500).json({ error: 'Search failed' });
 	}
 });
@@ -163,7 +164,7 @@ router.get('/summary/:roomId', requireSession, async (req, res) => {
 			res.json({ success: false, error: summaryResult.error || 'Failed to generate summary' });
 		}
 	} catch (err) {
-		console.error('Summary error:', err);
+		logger.error('Summary error:', err);
 		res.status(500).json({ error: 'Summary generation failed' });
 	}
 });

@@ -1,7 +1,9 @@
 const Router = require('express').Router;
 const config = require('../config');
 const dbHelper = require('../helpers/db-helper');
-const { v4: UUID } = require("uuid")
+const { v4: UUID } = require("uuid");
+const logger = require('../logger');
+const utils = require('../utils');
 
 const router = new Router();
 
@@ -9,16 +11,23 @@ router.get('/users/search-user', async (req, res) => {
 	const searchUser = req.query.searchuser;
 
 	if (!searchUser) {
-		res.send({ error: "search user query not given" });
-		return;
+		return res.status(400).json({ error: "search user query not given" });
+	}
+
+	// Validate and sanitize search query
+	const validation = utils.validateSearchQuery(searchUser, 100);
+	if (!validation.isValid) {
+		return res.status(400).json({ error: validation.error });
 	}
 
 	try {
-		const requiredUsers = await dbHelper.getSearchedUsers(searchUser);
+		const requiredUsers = await dbHelper.getSearchedUsers(validation.sanitized);
 
-		res.send({ requiredUsers })
+		res.json({ requiredUsers });
 	} catch (error) {
-		res.send({ error });
+		logger.error('Search user error:', error);
+		const sanitizedError = utils.sanitizeError(error);
+		res.status(500).json({ error: sanitizedError });
 	}
 });
 
@@ -29,9 +38,11 @@ router.put('/users/:uid/friend-request', async (req, res) => {
 	try {
 		const response = await dbHelper.sendFriendRequest(senderUid, receiverUid);
 
-		res.send({ response });
+		res.json({ response });
 	} catch (error) {
-		res.send({ error })
+		logger.error('Send friend request error:', error);
+		const sanitizedError = utils.sanitizeError(error);
+		res.status(500).json({ error: sanitizedError });
 	}
 })
 
@@ -43,23 +54,25 @@ router.post("/users/:uid/respond-request", async (req, res) => {
 	try {
 		const response = await dbHelper.respondFriendRequest(uid, requestUid, isAccepted);
 
-		res.send({ response });
+		res.json({ response });
 	} catch (error) {
-		res.send({ error })
+		logger.error('Respond friend request error:', error);
+		const sanitizedError = utils.sanitizeError(error);
+		res.status(500).json({ error: sanitizedError });
 	}
 })
 
 router.post("/users/:uid/files", async function (req, res) {
 	if (!req.files) {
-		return res.status(400).send({ error: `Could not decode any files` });
+		return res.status(400).json({ error: `Could not decode any files` });
 	}
 
 	if (!req.files.file) {
-		return res.status(400).send({ error: `No file found with key "file"` });
+		return res.status(400).json({ error: `No file found with key "file"` });
 	}
 
 	if (!req.query.storagePath) {
-		return res.status(400).send({ error: `No "storagePath" key found in query` });
+		return res.status(400).json({ error: `No "storagePath" key found in query` });
 	}
 
 	const file = req.files.file;
@@ -78,12 +91,16 @@ router.post("/users/:uid/files", async function (req, res) {
 			}
 		}).then(() => {
 			const downloadUrl = `https://firebasestorage.googleapis.com/v0/b/${config.firebase.storageBucketName}/o/${encodeURIComponent(uploadedFileName)}?alt=media&token=${uuid}`;
-			res.send({ success: `Uploaded file to path: ${storagePath}`, downloadUrl });
+			res.json({ success: `Uploaded file to path: ${storagePath}`, downloadUrl });
 		}).catch(err => {
-			res.send({ error: `Count not get download URL: ${err}` });
+			logger.error('File upload error:', err);
+			const sanitizedError = utils.sanitizeError(err);
+			res.status(500).json({ error: `Could not get download URL: ${sanitizedError}` });
 		});
 	}).catch(err => {
-		res.send({ error: `Could not upload file: ${err}` });
+		logger.error('File upload error:', err);
+		const sanitizedError = utils.sanitizeError(err);
+		res.status(500).json({ error: `Could not upload file: ${sanitizedError}` });
 	});
 })
 
@@ -103,7 +120,7 @@ router.post("/users/:uid/ai-assistant/room", async function (req, res) {
 		// Check if AI room already exists
 		const roomSnap = await roomRef.get();
 		if (roomSnap.exists) {
-			return res.send({ 
+			return res.json({ 
 				success: true, 
 				roomId: aiRoomId, 
 				message: 'AI Assistant room already exists',
@@ -133,7 +150,7 @@ router.post("/users/:uid/ai-assistant/room", async function (req, res) {
 			joined_rooms: config.firebase.admin.firestore.FieldValue.arrayUnion(aiRoomId)
 		});
 
-		res.send({ 
+		res.json({ 
 			success: true, 
 			roomId: aiRoomId,
 			message: 'AI Assistant room created successfully',
@@ -144,8 +161,9 @@ router.post("/users/:uid/ai-assistant/room", async function (req, res) {
 		});
 
 	} catch (error) {
-		console.error('AI Room Creation Error:', error);
-		res.status(500).send({ error: 'Failed to create AI assistant room' });
+		logger.error('AI Room Creation Error:', error);
+		const sanitizedError = utils.sanitizeError(error);
+		res.status(500).json({ error: 'Failed to create AI assistant room', details: sanitizedError });
 	}
 });
 
@@ -154,12 +172,19 @@ router.post("/users/:uid/ai-assistant/room", async function (req, res) {
 router.post('/users/:uid/groups', async (req, res) => {
 	try {
 		const creatorUid = req.params.uid;
-		const { name, photoUrl, memberUids } = req.body || {};
-		console.log(name, photoUrl, memberUids);
+		let { name, photoUrl, memberUids } = req.body || {};
+		
+		// Sanitize user inputs
+		if (name) name = utils.sanitizeInput(name);
+		if (photoUrl) photoUrl = utils.sanitizeInput(photoUrl);
+		
+		logger.debug('Creating group:', { creatorUid, name, memberUidsCount: memberUids?.length });
 		const response = await dbHelper.createGroup(creatorUid, { name, photoUrl, memberUids });
-		res.send(response);
+		res.json(response);
 	} catch (error) {
-		res.status(400).send({ error });
+		logger.error('Create group error:', error);
+		const sanitizedError = utils.sanitizeError(error);
+		res.status(400).json({ error: sanitizedError });
 	}
 });
 
@@ -170,9 +195,11 @@ router.post('/users/:uid/groups/:roomId/members', async (req, res) => {
 		const roomId = req.params.roomId;
 		const { memberUids } = req.body || {};
 		const response = await dbHelper.addGroupMembers(roomId, actorUid, memberUids || []);
-		res.send(response);
+		res.json(response);
 	} catch (error) {
-		res.status(400).send({ error });
+		logger.error('Add group members error:', error);
+		const sanitizedError = utils.sanitizeError(error);
+		res.status(400).json({ error: sanitizedError });
 	}
 });
 
@@ -183,9 +210,11 @@ router.delete('/users/:uid/groups/:roomId/members/:memberUid', async (req, res) 
 		const roomId = req.params.roomId;
 		const memberUid = req.params.memberUid;
 		const response = await dbHelper.removeGroupMember(roomId, actorUid, memberUid);
-		res.send(response);
+		res.json(response);
 	} catch (error) {
-		res.status(400).send({ error });
+		logger.error('Remove group member error:', error);
+		const sanitizedError = utils.sanitizeError(error);
+		res.status(400).json({ error: sanitizedError });
 	}
 });
 
@@ -194,15 +223,22 @@ router.patch('/users/:uid/groups/:roomId', async (req, res) => {
 	try {
 		const actorUid = req.params.uid;
 		const roomId = req.params.roomId;
-		const { name, photoUrl, aiDisabled } = req.body || {};
+		let { name, photoUrl, aiDisabled } = req.body || {};
+		
+		// Sanitize user inputs
+		if (name !== undefined) name = utils.sanitizeInput(name);
+		if (photoUrl !== undefined) photoUrl = utils.sanitizeInput(photoUrl);
+		
 		const updates = {};
 		if (name !== undefined) updates.name = name;
 		if (photoUrl !== undefined) updates.photo_url = photoUrl;
 		if (aiDisabled !== undefined) updates.ai_disabled = aiDisabled;
 		const response = await dbHelper.updateGroupInfo(roomId, actorUid, updates);
-		res.send(response);
+		res.json(response);
 	} catch (error) {
-		res.status(400).send({ error });
+		logger.error('Update group info error:', error);
+		const sanitizedError = utils.sanitizeError(error);
+		res.status(400).json({ error: sanitizedError });
 	}
 });
 
@@ -212,9 +248,11 @@ router.delete('/users/:uid/groups/:roomId', async (req, res) => {
 		const actorUid = req.params.uid;
 		const roomId = req.params.roomId;
 		const response = await dbHelper.deleteGroup(roomId, actorUid);
-		res.send(response);
+		res.json(response);
 	} catch (error) {
-		res.status(400).send({ error });
+		logger.error('Delete group error:', error);
+		const sanitizedError = utils.sanitizeError(error);
+		res.status(400).json({ error: sanitizedError });
 	}
 });
 
@@ -240,15 +278,16 @@ router.patch('/users/:uid/rooms/:roomId/ai', async (req, res) => {
 		// Update AI setting
 		await roomRef.update({ ai_disabled: aiDisabled === true });
 
-		res.send({ 
+		res.json({ 
 			success: true, 
 			message: `AI ${aiDisabled ? 'disabled' : 'enabled'} for room`,
 			roomId,
 			aiDisabled: aiDisabled === true
 		});
 	} catch (error) {
-		console.error('Toggle AI Error:', error);
-		res.status(500).send({ error: error.message || 'Failed to toggle AI' });
+		logger.error('Toggle AI Error:', error);
+		const sanitizedError = utils.sanitizeError(error);
+		res.status(500).json({ error: sanitizedError || 'Failed to toggle AI' });
 	}
 });
 

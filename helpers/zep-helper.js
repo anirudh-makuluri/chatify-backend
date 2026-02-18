@@ -1,5 +1,6 @@
 const { ZepClient } = require('@getzep/zep-cloud');
 const config = require('../config');
+const logger = require('../logger');
 
 let zepClient = null;
 try {
@@ -7,11 +8,11 @@ try {
 		zepClient = new ZepClient({ apiKey: config.zep.apiKey });
 		console.log('Zep client initialized with API key');
 	} else {
-		console.warn('Zep not configured - memory features will be disabled. Set ZEP_API_KEY in .env');
+		logger.warn('Zep not configured - memory features will be disabled. Set ZEP_API_KEY in .env');
 	}
 } catch (error) {
-	console.error('Failed to initialize Zep client:', error);
-	console.warn('Zep memory features will be disabled');
+	logger.error('Failed to initialize Zep client:', error);
+	logger.warn('Zep memory features will be disabled');
 }
 
 module.exports = {
@@ -33,7 +34,7 @@ module.exports = {
 			if (error.message && error.message.includes('already exists')) {
 				return { success: true, isNew: false };
 			}
-			console.error('Zep createUser error:', error);
+			logger.error('Zep createUser error:', error);
 			return { success: false, error: error.message };
 		}
 	},
@@ -77,7 +78,7 @@ module.exports = {
 				}
 			}
 		} catch (error) {
-			console.error('Zep createThread error:', error);
+			logger.error('Zep createThread error:', error);
 			return { success: false, error: error.message };
 		}
 	},
@@ -99,7 +100,7 @@ module.exports = {
 				context: returnContext ? response.context : null
 			};
 		} catch (error) {
-			console.error('Zep addMessages error:', error);
+			logger.error('Zep addMessages error:', error);
 			return { success: false, error: error.message };
 		}
 	},
@@ -171,7 +172,7 @@ module.exports = {
 				return { success: true, memory: context, type: 'context' };
 			}
 		} catch (error) {
-			console.error('Zep getMemory error:', error);
+			logger.error('Zep getMemory error:', error);
 			return { success: false, error: error.message, memory: null };
 		}
 	},
@@ -197,7 +198,7 @@ module.exports = {
 		try {
 			return { success: true, message: 'Metadata updates may require thread recreation' };
 		} catch (error) {
-			console.error('Zep updateThreadMetadata error:', error);
+			logger.error('Zep updateThreadMetadata error:', error);
 			return { success: false, error: error.message };
 		}
 	},
@@ -211,7 +212,7 @@ module.exports = {
 			await zepClient.thread.delete(threadId);
 			return { success: true };
 		} catch (error) {
-			console.error('Zep deleteThread error:', error);
+			logger.error('Zep deleteThread error:', error);
 			return { success: false, error: error.message };
 		}
 	},
@@ -236,7 +237,7 @@ module.exports = {
 				}
 			};
 		} catch (error) {
-			console.error('Zep getUserInsights error:', error);
+			logger.error('Zep getUserInsights error:', error);
 			return { success: false, error: error.message };
 		}
 	}

@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const dbHelper = require('../helpers/db-helper');
+const logger = require('../logger');
 
 // Middleware to verify authentication
 const verifyAuth = async (req, res, next) => {
@@ -16,7 +17,7 @@ const verifyAuth = async (req, res, next) => {
 		req.user = decodedClaims;
 		next();
 	} catch (error) {
-		console.error('Auth verification error:', error);
+		logger.error('Auth verification error:', error);
 		res.status(401).json({ error: 'Unauthorized' });
 	}
 };
@@ -82,7 +83,7 @@ router.get('/user/:userUid', verifyAuth, async (req, res) => {
 		const response = await dbHelper.getScheduledMessages(userUid, roomId);
 		res.json(response);
 	} catch (error) {
-		console.error('Get scheduled messages error:', error);
+		logger.error('Get scheduled messages error:', error);
 		res.status(500).json({ error: error.message || 'Failed to get scheduled messages' });
 	}
 });
@@ -109,7 +110,7 @@ router.put('/:scheduledMessageId', verifyAuth, async (req, res) => {
 		const response = await dbHelper.updateScheduledMessage(scheduledMessageId, updates);
 		res.json(response);
 	} catch (error) {
-		console.error('Update scheduled message error:', error);
+		logger.error('Update scheduled message error:', error);
 		res.status(500).json({ error: error.message || 'Failed to update scheduled message' });
 	}
 });
@@ -123,7 +124,7 @@ router.delete('/:scheduledMessageId', verifyAuth, async (req, res) => {
 		const response = await dbHelper.deleteScheduledMessage(scheduledMessageId, userUid);
 		res.json(response);
 	} catch (error) {
-		console.error('Delete scheduled message error:', error);
+		logger.error('Delete scheduled message error:', error);
 		res.status(500).json({ error: error.message || 'Failed to delete scheduled message' });
 	}
 });
@@ -149,7 +150,7 @@ router.get('/room/:roomId', verifyAuth, async (req, res) => {
 		const response = await dbHelper.getScheduledMessages(userUid, roomId);
 		res.json(response);
 	} catch (error) {
-		console.error('Get room scheduled messages error:', error);
+		logger.error('Get room scheduled messages error:', error);
 		res.status(500).json({ error: error.message || 'Failed to get room scheduled messages' });
 	}
 });

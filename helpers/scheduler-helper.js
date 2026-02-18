@@ -2,6 +2,7 @@ const cron = require('node-cron');
 const config = require('../config');
 const dbHelper = require('./db-helper');
 const Room = require('../Room');
+const logger = require('../logger');
 
 class SchedulerService {
 	constructor(io, roomList) {
@@ -16,7 +17,7 @@ class SchedulerService {
 			return;
 		}
 
-		console.log('Starting scheduled message scheduler...');
+		logger.info('Starting scheduled message scheduler...');
 		this.isRunning = true;
 
 		// Check for pending scheduled messages every minute
@@ -29,11 +30,11 @@ class SchedulerService {
 
 	stop() {
 		if (!this.isRunning) {
-			console.log('Scheduler is not running');
+			logger.info('Scheduler is not running');
 			return;
 		}
 
-		console.log('Stopping scheduled message scheduler...');
+		logger.info('Stopping scheduled message scheduler...');
 		this.isRunning = false;
 		console.log('Scheduled message scheduler stopped');
 	}
@@ -46,17 +47,17 @@ class SchedulerService {
 				return;
 			}
 
-			console.log(`Processing ${pendingMessages.length} scheduled messages...`);
+			logger.info(`Processing ${pendingMessages.length} scheduled messages...`);
 
 			for (const scheduledMessage of pendingMessages) {
 				try {
 					await this.sendScheduledMessage(scheduledMessage);
 				} catch (error) {
-					console.error(`Error processing scheduled message ${scheduledMessage.id}:`, error);
+					logger.error(`Error processing scheduled message ${scheduledMessage.id}:`, error);
 				}
 			}
 		} catch (error) {
-			console.error('Error processing scheduled messages:', error);
+			logger.error('Error processing scheduled messages:', error);
 		}
 	}
 
@@ -71,7 +72,7 @@ class SchedulerService {
 
 			const room = this.roomList.get(roomId);
 			if (!room) {
-				console.error(`Room ${roomId} not found for scheduled message ${scheduledMessage.id}`);
+				logger.error(`Room ${roomId} not found for scheduled message ${scheduledMessage.id}`);
 				return;
 			}
 
@@ -103,7 +104,7 @@ class SchedulerService {
 			}
 
 		} catch (error) {
-			console.error(`Error sending scheduled message ${scheduledMessage.id}:`, error);
+			logger.error(`Error sending scheduled message ${scheduledMessage.id}:`, error);
 			throw error;
 		}
 	}
@@ -126,9 +127,9 @@ class SchedulerService {
 			const room = new Room(roomId, this.io, roomRef, isGroup, members, roomName, photoUrl);
 			this.roomList.set(roomId, room);
 
-			console.log(`Room ${roomId} loaded for scheduled message`);
+			logger.debug(`Room ${roomId} loaded for scheduled message`);
 		} catch (error) {
-			console.error(`Error loading room ${roomId}:`, error);
+			logger.error(`Error loading room ${roomId}:`, error);
 			throw error;
 		}
 	}
@@ -150,7 +151,7 @@ class SchedulerService {
 					nextScheduledTime.setMonth(nextScheduledTime.getMonth() + 1);
 					break;
 				default:
-					console.log(`Unknown recurring pattern: ${recurringPattern}`);
+					logger.warn(`Unknown recurring pattern: ${recurringPattern}`);
 					return;
 			}
 
@@ -166,15 +167,15 @@ class SchedulerService {
 			delete nextScheduledMessage.sentAt; // Remove sentAt if it exists
 
 			await dbHelper.createScheduledMessage(nextScheduledMessage);
-			console.log(`Next recurring message scheduled for ${nextScheduledTime}`);
+			logger.info(`Next recurring message scheduled for ${nextScheduledTime}`);
 		} catch (error) {
-			console.error(`Error scheduling next recurring message:`, error);
+			logger.error(`Error scheduling next recurring message:`, error);
 		}
 	}
 
 	// Manual trigger for testing
 	async triggerScheduledMessages() {
-		console.log('Manually triggering scheduled message processing...');
+		logger.info('Manually triggering scheduled message processing...');
 		await this.processScheduledMessages();
 	}
 }

@@ -1,5 +1,6 @@
 const express = require('express');
 const config = require('../config');
+const logger = require('../logger');
 
 const router = express.Router();
 
@@ -154,7 +155,7 @@ router.post('/auth/setup-keys', requireSession, async (req, res) => {
 
 		return res.json({ success: true, message: 'User identity key stored successfully', deviceId });
 	} catch (error) {
-		console.error('Setup keys error:', error);
+		logger.error('Setup keys error:', error);
 		return res.status(500).json({ error: 'Failed to store identity key' });
 	}
 });
@@ -220,7 +221,7 @@ router.post('/rooms/:roomId/members/add-key', requireSession, async (req, res) =
 
 		return res.json({ success: true, message: 'Room key stored successfully', deviceId });
 	} catch (error) {
-		console.error('Add room key error:', error);
+		logger.error('Add room key error:', error);
 		return res.status(500).json({ error: 'Failed to store room key' });
 	}
 });
@@ -268,7 +269,7 @@ router.get('/rooms/:roomId/members/public-keys', requireSession, async (req, res
 
 		return res.json(response);
 	} catch (error) {
-		console.error('Get room members keys error:', error);
+		logger.error('Get room members keys error:', error);
 		return res.status(500).json({ error: 'Failed to fetch room keys' });
 	}
 });
@@ -347,7 +348,7 @@ router.get('/users/:userId/identity-key', async (req, res) => {
 		cacheSet(cacheKey, response, IDENTITY_KEY_CACHE_TTL_SECONDS);
 		return res.json(response);
 	} catch (error) {
-		console.error('Get identity key error:', error);
+		logger.error('Get identity key error:', error);
 		return res.status(500).json({ error: 'Failed to fetch identity key' });
 	}
 });
@@ -401,7 +402,7 @@ router.delete('/rooms/:roomId/members/:userId/key', requireSession, async (req, 
 
 		return res.json({ success: true, message: 'User key removed from room' });
 	} catch (error) {
-		console.error('Delete room key error:', error);
+		logger.error('Delete room key error:', error);
 		return res.status(500).json({ error: 'Failed to remove room key' });
 	}
 });
@@ -566,7 +567,7 @@ router.post('/rooms/:roomId/messages', requireSession, async (req, res) => {
 
 		return res.json({ success: true, messageId: messageRef.id });
 	} catch (error) {
-		console.error('Send encrypted message error:', error);
+		logger.error('Send encrypted message error:', error);
 		return res.status(500).json({ error: 'Failed to store encrypted message' });
 	}
 });

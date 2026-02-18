@@ -3,6 +3,8 @@ const Router = require('express').Router;
 const jwt = require('jsonwebtoken');
 const config = require('../config');
 const dbHelper = require('../helpers/db-helper');
+const logger = require('../logger');
+const utils = require('../utils');
 
 const router = new Router();
 
@@ -14,17 +16,17 @@ const corsOptions = {
 router.options('/session/', cors(corsOptions))
 
 router.get('/', (req, res) => {
-	console.log("Pinged :)");
-	res.send("Hello :)")
+	logger.info("Pinged :)");
+	res.json({ message: "Hello :)" });
 })
 
 router.post('/session', (req, res) => {
 	const idToken = req.body.idToken.toString();
 
 	config.firebase.admin.auth().verifyIdToken(idToken).then(async (decodedToken) => {
-		console.log("Decoded token: ", decodedToken);
+		logger.info("Decoded token received");
 		const response = await dbHelper.createUser(decodedToken)
-		console.log(response)
+		logger.debug("User creation response received");
 
 		if(response.error) throw response.error
 
@@ -37,14 +39,16 @@ router.post('/session', (req, res) => {
 					options.sameSite = 'none'
 				}
 				res.cookie('session', sessionCookie, options);
-				res.end(JSON.stringify({ status: 'success' }))
+				res.json({ status: 'success' });
 			},
 			(error) => {
-				res.status(401).send('UNAUTHORIZED REQUEST!');
+				logger.error('Failed to create session cookie:', error);
+				res.status(401).json({ error: 'UNAUTHORIZED REQUEST!' });
 			})
 	}).catch(error => {
-		console.log(error);
-		res.status(401).send({ error })
+		logger.error('Session creation error:', error);
+		const sanitizedError = utils.sanitizeError(error);
+		res.status(401).json({ error: sanitizedError });
 	})
 })
 
@@ -56,27 +60,27 @@ router.get('/session', (req, res) => {
 	res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization');
 	res.header('Access-Control-Allow-Credentials', true);
 
-	if(req.cookies.session) {
+		if(req.cookies.session) {
 		config.firebase.admin.auth().verifySessionCookie(req.cookies.session, true)
 		.then(async (decodedClaims) => {
 			const uid = decodedClaims.uid;
 
 			const response = await dbHelper.getAuthUserData(uid);
 
-			res.send(response);
+			res.json(response);
 		}).catch((error) => {
-			console.log(error)
+			logger.error('Session verification error:', error);
 			res.clearCookie('session');
-			res.status(401).send({ error: 'Session invalid, please login again' });
+			res.status(401).json({ error: 'Session invalid, please login again' });
 		});
 	}else {
-		res.status(401).send({ error: 'No session found, please login' });
+		res.status(401).json({ error: 'No session found, please login' });
 	}
 })
 
 router.delete('/session', (req, res) => {
 	res.clearCookie('session');
-	res.send({ success: 'Successfully deleted session' });
+	res.json({ success: 'Successfully deleted session' });
 })
 
 
